@@ -124,109 +124,15 @@ Budget documents are available at `/orwd_data/` (mounted read-only).
 Write a comprehensive initial response that provides rapid but serious analysis of the Budget.
 """
 
-        # Task-specific guidance
-        if self.task_data["task_id"] == "budget_2024_initial_response":
-            task_guidance = """
-## Key Themes for Autumn Budget 2024
-
-Your analysis should cover:
-
-1. **"Broad Brush Strokes" Headlines**: Big tax rises, more cash for public services, more borrowing, more investment
-2. **Central Organizing Device: "Two Gambles"**:
-   - First gamble: Public services risk (can big cash injection improve services before pressures return?)
-   - Second gamble: Borrowing efficiency risk (will increased borrowing "pay off" through growth?)
-3. **Sequencing Theme**: Front-loaded support vs later restraint - tension between near-term spending/borrowing and later discipline
-4. **Fiscal Credibility**: Not just rules compliance, but practical believability of slower future spending growth
-5. **Growth Assessment**: Short-term vs long-term distinction (time-profiled and conditional, not simply pro/anti-growth)
-6. **Tax Package**:
-   - Incidence and economic effects (who ultimately bears tax rises)
-   - Tax reform critique (revenue-raising vs improving tax design)
-   - Policy inconsistency (especially climate goals vs fuel duty)
-7. **Spending Profile**: Front-loading and later tightness, not just aggregate numbers
-8. **Fiscal Inheritance**: Framing that inherited plans were unrealistic, tax rises near-inevitable
-9. **Tone**: Analytically skeptical but balanced - commending some choices while warning about risks
-
-## Important Figures to Find
-
-Your analysis should include specific numbers such as:
-- Tax-to-GDP ratio (highest ever?)
-- Near-term borrowing increase (£28bn in 2025-26?)
-- Public investment increase (£19bn?)
-- Borrowing composition (day-to-day vs investment split)
-- Stability rule timing (borrowing only to invest by when?)
-- Pre-election vs current borrowing plans comparison
-- Growth trajectory timeline (short-term, end of parliament, 2032)
-- Employer NICs details (rate and threshold changes)
-- Tax incidence estimates (e.g., three-quarters of NICs on employees)
-- Spending growth rates over time (+4.8%, +3.1%, then 1.3%/year?)
-- Fiscal headroom (£10bn?)
-- Fiscal framework changes (rolling target, PSNFL rule)
-"""
-        else:  # budget_2025_initial_response
-            task_guidance = """
-## Key Themes for Budget 2025
-
-Your analysis should cover:
-
-1. **Economic Context**: OBR forecast changes, growth projections, fiscal position
-2. **Key Policy Announcements**: Tax changes, spending plans, welfare reforms
-3. **Fiscal Strategy**: "Spend now, pay later" sequencing, consolidation path credibility
-4. **Detailed Analysis**:
-   - Tax package design (distribution, incentives, reform quality)
-   - Public spending pressures (including SEND funding specifically)
-   - Welfare changes and poverty implications (especially two-child limit)
-5. **Synthesis**: Big-picture assessment with zoomed-out perspective
-
-## Requirements
-
-Your response MUST:
-- Frame this as an "initial response" (rapid policy analysis), not a retrospective
-- Anchor clearly to Budget 2025 context
-- Cover BOTH the economic forecast AND policy announcements
-- Include specific figures and numbers from the documents
-- Capture the headline theme: "big Budget, but not as expected"
-- Explain the "spend now, pay later" sequencing
-- Discuss both sides of fiscal picture (tax rises, headroom, borrowing pressures)
-- Be analytical and evidence-based (mixed praise/critique), not political
-- Use clear structure with headings/sections
-- Include a synthesis paragraph stepping back to assess the whole package
-
-## Important Figures to Include
-
-Your analysis should reference specific numbers such as:
-- Tax rise comparisons (this year vs previous: £26bn vs £32bn?)
-- Headroom figures and changes (increased to £22bn?)
-- OBR forecast revisions (revenues +£16bn, spending +£22bn, deterioration £6bn?)
-- Fiscal consolidation figures (£12bn in 2029-30?)
-- Time-profile of borrowing (higher 2025-29, lower in 2029-30?)
-- Cumulative borrowing effect (£57bn over five years?)
-- Threshold freeze details (3-year extension, yields)
-- Taxpayer impacts (+5.2M taxpayers, +4.8M higher-rate)
-- Tax burden trajectory (36.3% to 38.3% of GDP)
-- Two-child limit abolition (£3bn/year, 560k families, £5,300 gain)
-- SEND pressures (£6bn/year, 14% growth, 9% of schools budget)
-"""
-
         submission_instructions = f"""
 ## Submission
 
 When ready, write your final report to: **{self.task_data['output_path']}**
 
 Then call `submit_answer` tool to submit for evaluation.
-
-Your report will be graded against 30 criteria (15 broad/high-level + 15 specific factual). Each criterion contributes 1 point. Score 27/30 = 0.9 reward.
-
-## Available Tools
-
-- `bash` - Run shell commands, Python scripts
-- `read` - Read file contents
-- `write` - Write files (including your report)
-- `grep` - Search for patterns in files
-- `glob` - Find files matching patterns
-- `submit_answer` - Submit your final report for grading
 """
 
-        prompt_text = base_prompt + task_guidance + submission_instructions
+        prompt_text = base_prompt + submission_instructions
 
         return [TextBlock(text=prompt_text)]
 
