@@ -7,7 +7,7 @@ from typing import Any
 
 import openai
 from openreward import AsyncOpenReward, SandboxBucketConfig, SandboxSettings
-from openreward.environments import JSONObject, TextBlock, ToolOutput, tool
+from openreward.environments import JSONObject, TextBlock, ToolOutput, tool, Split
 from pydantic import BaseModel
 
 from cli_environment import CLIEnvironment
@@ -49,14 +49,14 @@ class BudgetDay(CLIEnvironment):
     """Budget Day environment - stub implementation"""
 
     @classmethod
-    def list_splits(cls) -> list[str]:
+    def list_splits(cls) -> list[Split]:
         """Return available data splits"""
-        return ["test"]
+        return [Split(name="train", type="train")]
 
     @classmethod
-    def list_tasks(cls, split: str) -> list[JSONObject]:
+    def list_tasks(cls, split:str) -> list[JSONObject]:
         """Return list of tasks for a given split"""
-        if split != "test":
+        if split != "train":
             return []
 
         return TASKS
