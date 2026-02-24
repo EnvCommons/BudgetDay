@@ -1,3 +1,5 @@
 openreward
 pydantic>=2.0.0
 openai
+openpyxl
+python-pptx

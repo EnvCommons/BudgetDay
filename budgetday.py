@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 import openai
+import openpyxl
+import pptx
 from openreward import AsyncOpenReward, SandboxBucketConfig, SandboxSettings
 from openreward.environments import JSONObject, TextBlock, ToolOutput, tool, Split
+from openreward.toolsets import WordToolset, ExcelToolset, PowerPointToolset, PDFToolset
 from pydantic import BaseModel
 
 from cli_environment import CLIEnvironment
@@ -21,7 +27,26 @@ with open(ENV_PATH / "rubrics.json") as f:
 # Define tasks
 TASKS = [
     {
+        "task_id": "budget_2022_initial_response",
+        "task_type": "report",
+        "year": 2022,
+        "budget_name": "Autumn Statement 2022",
+        "data_dir": "2022",
+        "output_path": "/home/ubuntu/final_report.md",
+        "description": "Draft initial response to Autumn Statement 2022",
+    },
+    {
+        "task_id": "budget_2023_initial_response",
+        "task_type": "report",
+        "year": 2023,
+        "budget_name": "Spring Budget 2023",
+        "data_dir": "2023",
+        "output_path": "/home/ubuntu/final_report.md",
+        "description": "Draft initial response to Spring Budget 2023",
+    },
+    {
         "task_id": "budget_2024_initial_response",
+        "task_type": "report",
         "year": 2024,
         "budget_name": "Autumn Budget 2024",
         "data_dir": "2024",
@@ -30,13 +55,84 @@ TASKS = [
     },
     {
         "task_id": "budget_2025_initial_response",
+        "task_type": "report",
         "year": 2025,
         "budget_name": "Budget 2025",
         "data_dir": "2025",
         "output_path": "/home/ubuntu/final_report.md",
         "description": "Draft initial response to 2025 Budget",
     },
+    {
+        "task_id": "budget_2025_borrowing_chart",
+        "task_type": "chart",
+        "year": 2025,
+        "budget_name": "Budget 2025",
+        "data_dir": "2025",
+        "output_path": "/home/ubuntu/changes_borrowing.xlsx",
+        "output_path_png": "/home/ubuntu/changes_borrowing.png",
+        "description": "Create borrowing forecast comparison chart and spreadsheet",
+    },
+    {
+        "task_id": "budget_2025_productivity_effect",
+        "task_type": "qa",
+        "year": 2025,
+        "budget_name": "Budget 2025",
+        "data_dir": "2025",
+        "output_path": "/home/ubuntu/explanation.txt",
+        "description": "Identify the effect of productivity downgrade on 2029-30 revenues",
+        "question": "What was the effect of the productivity downgrade on 2029-30 revenues?",
+        "expected_answer": "-£16bn",
+    },
+    {
+        "task_id": "budget_2025_policy_decisions",
+        "task_type": "chart",
+        "year": 2025,
+        "budget_name": "Budget 2025",
+        "data_dir": "2025",
+        "output_path": "/home/ubuntu/policy_decisions.xlsx",
+        "output_path_png": "/home/ubuntu/policy_decisions.png",
+        "description": "Create spreadsheet and chart showing effect of spending and tax decisions on borrowing",
+    },
+    {
+        "task_id": "budget_deficit_comparison",
+        "task_type": "chart",
+        "year": 2025,
+        "budget_name": "Budget Deficit Comparison",
+        "data_dir": None,  # Needs both 2024 and 2025 data
+        "output_path": "/home/ubuntu/current_budget_deficit.xlsx",
+        "output_path_png": "/home/ubuntu/current_budget_deficit.png",
+        "description": "Compare current budget deficit (% GDP) forecasts between October 2024 and November 2025 budgets",
+    },
+    {
+        "task_id": "budget_2024_tax_measures",
+        "task_type": "presentation",
+        "year": 2024,
+        "budget_name": "Autumn Budget 2024",
+        "data_dir": "2024",
+        "output_path": "/home/ubuntu/tax_measures.pptx",
+        "description": "Create a PowerPoint presentation summarizing key tax measures from the Autumn Budget 2024",
+    },
 ]
+
+
+BORROWING_GROUND_TRUTH = {
+    "years": ["2025-26", "2026-27", "2027-28", "2028-29", "2029-30"],
+    "march_2025": [117.7, 97.2, 80.2, 77.4, 74.0],
+    "october_2025": [138.3, 112.1, 98.5, 86.9, 67.9],
+    "difference": [20.6, 14.9, 18.3, 9.5, -6.2],
+}
+
+POLICY_DECISIONS_GROUND_TRUTH = {
+    "years": ["2025-26", "2026-27", "2027-28", "2028-29", "2029-30"],
+    "spending_decisions": [4.9, 6.6, 16.0, 12.9, 11.3],
+    "tax_decisions": [-1.3, -0.7, -6.1, -13.9, -26.1],
+}
+
+CURRENT_BUDGET_DEFICIT_GROUND_TRUTH = {
+    "years": ["2025-26", "2026-27", "2027-28", "2028-29", "2029-30"],
+    "budget_2024": [0.9, 0.2, -0.3, -0.3, -0.3],  # October 2024 (green line)
+    "budget_2025": [1.7, 0.9, 0.1, -0.1, -0.6],   # November 2025 (yellow line)
+}
 
 
 class SubmitAnswerInput(BaseModel):
@@ -47,6 +143,8 @@ class SubmitAnswerInput(BaseModel):
 
 class BudgetDay(CLIEnvironment):
     """Budget Day environment - stub implementation"""
+
+    toolsets = [WordToolset, ExcelToolset, PowerPointToolset, PDFToolset]
 
     @classmethod
     def list_splits(cls) -> list[Split]:
@@ -80,16 +178,20 @@ class BudgetDay(CLIEnvironment):
         self.grader_client = openai.AsyncClient(api_key=api_key)
 
         # Configure sandbox with selective data mounting
+        bucket_config_kwargs = {
+            "mount_path": "/orwd_data",
+            "read_only": True,
+        }
+        # Only mount specific directory if data_dir is specified
+        if self.task_data.get("data_dir"):
+            bucket_config_kwargs["only_dir"] = self.task_data["data_dir"]
+
         self.sandbox_settings = SandboxSettings(
             environment="GeneralReasoning/BudgetDay",
-            image="generalreasoning/python-ds:3.12-tools",
+            image="generalreasoning/knowledge-worker:latest",
             machine_size="0.5:0.5",
             block_network=False,
-            bucket_config=SandboxBucketConfig(
-                mount_path="/orwd_data",
-                read_only=True,
-                only_dir=self.task_data["data_dir"],  # Only mount budgetday/2025
-            ),
+            bucket_config=SandboxBucketConfig(**bucket_config_kwargs),
         )
 
         or_client = AsyncOpenReward(api_key=secrets.get("api_key", ""))
@@ -104,7 +206,23 @@ class BudgetDay(CLIEnvironment):
     async def get_prompt(self) -> list[TextBlock]:
         """Return task prompt with data location and submission instructions."""
 
-        # Base prompt common to all tasks
+        task_type = self.task_data.get("task_type", "report")  # default to report for backwards compatibility
+
+        # Route based on task type
+        if task_type == "qa":
+            return [TextBlock(text=self._get_qa_prompt())]
+        elif task_type == "chart":
+            # Check which chart task
+            if self.task_data["task_id"] == "budget_2025_policy_decisions":
+                return [TextBlock(text=self._get_policy_decisions_prompt())]
+            elif self.task_data["task_id"] == "budget_deficit_comparison":
+                return [TextBlock(text=self._get_current_budget_deficit_prompt())]
+            else:  # budget_2025_borrowing_chart
+                return [TextBlock(text=self._get_borrowing_chart_prompt())]
+        elif task_type == "presentation":
+            return [TextBlock(text=self._get_presentation_prompt())]
+
+        # Base prompt common to all report-writing tasks
         base_prompt = f"""# Task: Draft Initial Response to {self.task_data['budget_name']}
 
 You are a policy analyst at a fiscal policy research organization. Your task is to draft an "initial response" to the {self.task_data['budget_name']} - a rapid policy analysis meant to be written soon after Budget Day.
@@ -125,11 +243,919 @@ Write a comprehensive initial response that provides rapid but serious analysis 
 When ready, write your final report to: **{self.task_data['output_path']}**
 
 Then call `submit_answer` tool to submit for evaluation.
+
+Your report will be graded against 30 criteria. Each criterion contributes 1 point. Score 27/30 = 0.9 reward.
 """
 
         prompt_text = base_prompt + submission_instructions
 
         return [TextBlock(text=prompt_text)]
+
+    def _get_borrowing_chart_prompt(self) -> str:
+        """Return the prompt for the borrowing forecast comparison task."""
+        return """# Task: Create Borrowing Forecast Comparison Chart and Spreadsheet
+
+You are a policy analyst. Your task is to extract borrowing forecast data from the Budget 2025 documents and create two output files comparing the March 2025 and October 2025 (Budget 2025) OBR borrowing forecasts for Public Sector Net Borrowing (PSNB).
+
+## Available Data
+
+Budget documents are available at `/orwd_data/` (mounted read-only). The borrowing forecast data can be found within these documents for the fiscal years 2025-26 through 2029-30.
+
+You need to find and compare:
+- The March 2025 OBR forecast for borrowing (PSNB) for each year
+- The October 2025 (Budget 2025) OBR forecast for borrowing (PSNB) for each year
+- The difference between the two forecasts for each year
+
+## Required Outputs
+
+### 1. Bar Chart: `/home/ubuntu/changes_borrowing.png`
+Create a bar chart showing the DIFFERENCE in borrowing forecasts (October 2025 minus March 2025) for each fiscal year from 2025-26 to 2029-30.
+- The bars MUST be green
+- The x-axis should show the tax years (2025-26 through 2029-30)
+- The y-axis should show the change in borrowing (in GBP billions)
+- Include appropriate title and axis labels
+- Note: most years show an increase in borrowing (positive difference), but 2029-30 shows a decrease (negative difference)
+
+### 2. Spreadsheet: `/home/ubuntu/changes_borrowing.xlsx`
+Create an Excel spreadsheet containing:
+- The tax years (2025-26 through 2029-30)
+- The March 2025 borrowing forecast values for each year
+- The October 2025 borrowing forecast values for each year
+- The difference between the October and March forecasts for each year
+
+## Submission
+
+When both files are ready at the paths above, call `submit_answer` to submit for evaluation.
+
+Your submission will be graded on:
+- Accuracy of the spreadsheet data against the official OBR figures
+- Quality and correctness of the bar chart (green bars, correct years, accurate differences)
+"""
+
+    def _get_qa_prompt(self) -> str:
+        """Return the prompt for Q&A tasks."""
+        question = self.task_data["question"]
+        output_path = self.task_data["output_path"]
+
+        return f"""# Task: Budget 2025 Analysis Question
+
+You are a policy analyst. Your task is to answer the following question about Budget 2025 by analyzing the budget documents.
+
+## Available Data
+
+Budget documents are available at `/orwd_data/` (mounted read-only).
+
+## Question
+
+{question}
+
+## Your Task
+
+Write your answer with a brief explanation (1-3 sentences) to: **{output_path}**
+
+Then call `submit_answer` to submit for evaluation.
+"""
+
+    def _get_policy_decisions_prompt(self) -> str:
+        """Return the prompt for the policy decisions chart task."""
+        return """# Task: Create Policy Decisions Impact Chart and Spreadsheet
+
+You are a policy analyst. Your task is to extract data from the Budget 2025 documents showing the effect of new spending decisions and new tax decisions on the change in borrowing since March 2025.
+
+## Available Data
+
+Budget documents are available at `/orwd_data/` (mounted read-only). The data can be found within these documents for the fiscal years 2025-26 through 2029-30.
+
+You need to find:
+- The effect of new spending decisions on borrowing for each year
+- The effect of new tax decisions on borrowing for each year
+
+## Required Outputs
+
+### 1. Bar Chart (Grouped or Stacked): `/home/ubuntu/policy_decisions.png`
+Create a bar chart (either grouped or stacked) showing TWO data series for each fiscal year from 2025-26 to 2029-30:
+- **Blue bars**: Effect of spending decisions on borrowing (£bn)
+- **Purple bars**: Effect of tax decisions on borrowing (£bn)
+- The x-axis should show the fiscal years (2025-26 through 2029-30)
+- The y-axis should show the change in borrowing (£bn)
+- Include appropriate title and axis labels
+- Note: Tax decisions will have negative values (reducing borrowing), spending decisions will have positive values (increasing borrowing)
+
+### 2. Spreadsheet: `/home/ubuntu/policy_decisions.xlsx`
+Create an Excel spreadsheet containing:
+- The fiscal years (2025-26 through 2029-30)
+- The effect of spending decisions on borrowing for each year
+- The effect of tax decisions on borrowing for each year
+
+## Submission
+
+When both files are ready at the paths above, call `submit_answer` to submit for evaluation."""
+
+    def _get_current_budget_deficit_prompt(self) -> str:
+        """Return the prompt for the current budget deficit comparison task."""
+        return """# Task: Compare Current Budget Deficit Forecasts
+
+You are a policy analyst. Your task is to extract and compare current budget deficit forecasts (as % of GDP) from two different UK budgets.
+
+## Available Data
+
+Budget documents are available at `/orwd_data/` (mounted read-only):
+- `/orwd_data/2024/` - Autumn Budget 2024 (October 2024)
+- `/orwd_data/2025/` - Budget 2025 (November 2025)
+
+## Data to Extract
+
+For fiscal years 2025-26 through 2029-30, extract the **current budget deficit as % of GDP** from:
+1. **October 2024 Budget** (Autumn Budget 2024) - found in `/orwd_data/2024/`
+2. **November 2025 Budget** (Budget 2025) - found in `/orwd_data/2025/`
+
+## Required Outputs
+
+### 1. Line Graph: `/home/ubuntu/current_budget_deficit.png`
+Create a line graph comparing the two budget forecasts:
+- **X-axis**: Fiscal years (2025-26, 2026-27, 2027-28, 2028-29, 2029-30)
+- **Y-axis**: Current budget deficit (% of GDP)
+- **Green line**: October 2024 budget forecast
+- **Yellow line**: November 2025 budget forecast
+- Include appropriate title, axis labels, and legend
+- Note: Values can be positive (deficit) or negative (surplus)
+
+### 2. Spreadsheet: `/home/ubuntu/current_budget_deficit.xlsx`
+Create an Excel spreadsheet containing:
+- Column 1: Fiscal years (2025-26 through 2029-30)
+- Column 2: Current budget deficit (% GDP) from October 2024 budget
+- Column 3: Current budget deficit (% GDP) from November 2025 budget
+
+## Submission
+
+When both files are ready at the paths above, call `submit_answer` to submit for evaluation."""
+
+    def _get_presentation_prompt(self) -> str:
+        """Return the prompt for the presentation task."""
+        return f"""# Task: Create "Tax Measures" Presentation for {self.task_data['budget_name']}
+
+You are a policy analyst at a fiscal policy research organization. Your task is to create a PowerPoint presentation (.pptx) titled "Tax Measures" that provides a comprehensive, analytical summary of the key tax measures announced in the {self.task_data['budget_name']}.
+
+## Available Data
+
+Budget documents are available at `/orwd_data/` (mounted read-only). These contain detailed analysis of the {self.task_data['budget_name']} tax measures.
+
+## Required Output
+
+Save your presentation as: **{self.task_data['output_path']}**
+
+Then call `submit_answer` to submit for evaluation."""
+
+    async def _grade_spreadsheet(self, xlsx_bytes: bytes) -> dict[str, Any]:
+        """Grade the borrowing spreadsheet using gpt-5-mini by extracting data to text."""
+        # Read Excel file and extract data
+        wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes))
+
+        # Extract all data from all sheets into text format
+        spreadsheet_text = ""
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            spreadsheet_text += f"Sheet: {sheet_name}\n"
+            spreadsheet_text += "-" * 40 + "\n"
+
+            for row in ws.iter_rows(values_only=True):
+                # Convert row to strings, handling None values
+                row_strs = [str(cell) if cell is not None else "" for cell in row]
+                spreadsheet_text += " | ".join(row_strs) + "\n"
+
+            spreadsheet_text += "\n"
+
+        gt = BORROWING_GROUND_TRUTH
+        grader_prompt = f"""You are evaluating a spreadsheet that should contain UK government borrowing forecast data.
+
+The ground truth data is:
+
+Tax Years: {', '.join(gt['years'])}
+March 2025 forecast (GBP bn): {', '.join(str(v) for v in gt['march_2025'])}
+October 2025 forecast (GBP bn): {', '.join(str(v) for v in gt['october_2025'])}
+Difference (Oct minus March): {', '.join(str(v) for v in gt['difference'])}
+
+Here is the spreadsheet content:
+
+{spreadsheet_text}
+
+The spreadsheet may have rows or columns in any order, and headers may vary. Please evaluate the following criteria. For each, answer PASS or FAIL:
+
+1. YEARS_PRESENT: Does the spreadsheet contain all 5 fiscal years (2025-26, 2026-27, 2027-28, 2028-29, 2029-30) in some form?
+2. MARCH_VALUES: Does the spreadsheet contain the March 2025 forecast values (117.7, 97.2, 80.2, 77.4, 74.0) or values very close to them (within 0.5)?
+3. OCTOBER_VALUES: Does the spreadsheet contain the October 2025 forecast values (138.3, 112.1, 98.5, 86.9, 67.9) or values very close to them (within 0.5)?
+4. DIFFERENCE_VALUES: Does the spreadsheet contain the difference values (20.6, 14.9, 18.3, 9.5, -6.2) or values very close to them (within 0.5)?
+
+Format your response as:
+YEARS_PRESENT: PASS/FAIL
+MARCH_VALUES: PASS/FAIL
+OCTOBER_VALUES: PASS/FAIL
+DIFFERENCE_VALUES: PASS/FAIL
+
+Then provide a brief explanation."""
+
+        response = await self.grader_client.responses.create(
+            model="gpt-5-mini",
+            input=[
+                {
+                    "role": "user",
+                    "content": grader_prompt,
+                }
+            ],
+            # NO temperature parameter (per CLAUDE.md)
+        )
+
+        grading_text = response.output_text or ""
+
+        checks = {}
+        for criterion in ["YEARS_PRESENT", "MARCH_VALUES", "OCTOBER_VALUES", "DIFFERENCE_VALUES"]:
+            pattern = rf"{criterion}\s*:\s*(PASS|FAIL)"
+            match = re.search(pattern, grading_text.upper())
+            checks[criterion] = match.group(1) == "PASS" if match else False
+
+        passed_checks = sum(checks.values())
+        score = passed_checks / len(checks)
+
+        return {
+            "score": score,
+            "checks": checks,
+            "details": grading_text,
+        }
+
+    async def _grade_chart_image(self, png_bytes: bytes) -> dict[str, Any]:
+        """Grade the borrowing chart image using gpt-5-mini vision."""
+        image_b64 = base64.b64encode(png_bytes).decode("utf-8")
+
+        grader_prompt = """You are evaluating a bar chart showing changes in UK government borrowing forecasts.
+
+The chart should show the DIFFERENCE in borrowing between October 2025 and March 2025 OBR forecasts for each fiscal year from 2025-26 to 2029-30.
+
+Expected differences (in GBP billions):
+- 2025-26: +20.6
+- 2026-27: +14.9
+- 2027-28: +18.3
+- 2028-29: +9.5
+- 2029-30: -6.2
+
+Please evaluate the following criteria. For each, answer PASS or FAIL:
+
+1. IS_BAR_CHART: Is this a bar chart (not a line chart, pie chart, scatter plot, etc.)?
+2. GREEN_BARS: Are the bars green (any shade of green is acceptable)?
+3. CORRECT_YEARS: Does the chart show all 5 fiscal years (2025-26 through 2029-30)?
+4. NEGATIVE_2029_30: Does the last year (2029-30) show a negative value (bar going below zero / below the x-axis)?
+5. APPROXIMATE_VALUES: Do the bar heights approximately match the expected differences listed above? Every year should be positive except 2029-30.
+
+Format your response as:
+IS_BAR_CHART: PASS/FAIL
+GREEN_BARS: PASS/FAIL
+CORRECT_YEARS: PASS/FAIL
+NEGATIVE_2029_30: PASS/FAIL
+APPROXIMATE_VALUES: PASS/FAIL
+
+Then provide a brief explanation."""
+
+        response = await self.grader_client.responses.create(
+            model="gpt-5-mini",
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:image/png;base64,{image_b64}",
+                        },
+                        {
+                            "type": "input_text",
+                            "text": grader_prompt,
+                        },
+                    ],
+                }
+            ],
+            # NO temperature parameter (per CLAUDE.md)
+        )
+
+        grading_text = response.output_text or ""
+
+        checks = {}
+        for criterion in ["IS_BAR_CHART", "GREEN_BARS", "CORRECT_YEARS",
+                          "NEGATIVE_2029_30", "APPROXIMATE_VALUES"]:
+            pattern = rf"{criterion}\s*:\s*(PASS|FAIL)"
+            match = re.search(pattern, grading_text.upper())
+            checks[criterion] = match.group(1) == "PASS" if match else False
+
+        passed_checks = sum(checks.values())
+        score = passed_checks / len(checks)
+
+        return {
+            "score": score,
+            "checks": checks,
+            "details": grading_text,
+        }
+
+    async def _grade_policy_decisions_spreadsheet(self, xlsx_bytes: bytes) -> dict[str, Any]:
+        """Grade the policy decisions spreadsheet using gpt-5-mini by extracting data to text."""
+        # Read Excel file and extract data
+        wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes))
+
+        # Extract all data from all sheets into text format
+        spreadsheet_text = ""
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            spreadsheet_text += f"Sheet: {sheet_name}\n"
+            spreadsheet_text += "-" * 40 + "\n"
+
+            for row in ws.iter_rows(values_only=True):
+                # Convert row to strings, handling None values
+                row_strs = [str(cell) if cell is not None else "" for cell in row]
+                spreadsheet_text += " | ".join(row_strs) + "\n"
+
+            spreadsheet_text += "\n"
+
+        gt = POLICY_DECISIONS_GROUND_TRUTH
+        grader_prompt = f"""You are evaluating a spreadsheet that should contain UK Budget 2025 policy decisions impact data.
+
+The ground truth data is:
+
+Fiscal Years: {', '.join(gt['years'])}
+Spending decisions effect on borrowing (GBP bn): {', '.join(str(v) for v in gt['spending_decisions'])}
+Tax decisions effect on borrowing (GBP bn): {', '.join(str(v) for v in gt['tax_decisions'])}
+
+Here is the spreadsheet content:
+
+{spreadsheet_text}
+
+The spreadsheet may have rows or columns in any order, and headers may vary. Please evaluate the following criteria. For each, answer PASS or FAIL:
+
+1. YEARS_PRESENT: Does the spreadsheet contain all 5 fiscal years (2025-26, 2026-27, 2027-28, 2028-29, 2029-30) in some form?
+2. SPENDING_VALUES: Does the spreadsheet contain the spending decisions values (4.9, 6.6, 16.0, 12.9, 11.3) or values very close to them (within 0.5)?
+3. TAX_VALUES: Does the spreadsheet contain the tax decisions values (-1.3, -0.7, -6.1, -13.9, -26.1) or values very close to them (within 0.5)?
+
+Format your response as:
+YEARS_PRESENT: PASS/FAIL
+SPENDING_VALUES: PASS/FAIL
+TAX_VALUES: PASS/FAIL
+
+Then provide a brief explanation."""
+
+        response = await self.grader_client.responses.create(
+            model="gpt-5-mini",
+            input=[{"role": "user", "content": grader_prompt}],
+            # NO temperature parameter (per CLAUDE.md)
+        )
+
+        grading_text = response.output_text or ""
+
+        checks = {}
+        for criterion in ["YEARS_PRESENT", "SPENDING_VALUES", "TAX_VALUES"]:
+            pattern = rf"{criterion}\s*:\s*(PASS|FAIL)"
+            match = re.search(pattern, grading_text.upper())
+            checks[criterion] = match.group(1) == "PASS" if match else False
+
+        passed_checks = sum(checks.values())
+        score = passed_checks / len(checks)
+
+        return {
+            "score": score,
+            "checks": checks,
+            "details": grading_text,
+        }
+
+    async def _grade_policy_decisions_chart(self, png_bytes: bytes) -> dict[str, Any]:
+        """Grade the policy decisions chart image using gpt-5-mini vision."""
+        image_b64 = base64.b64encode(png_bytes).decode("utf-8")
+
+        grader_prompt = """You are evaluating a bar chart showing the effect of Budget 2025 policy decisions on borrowing.
+
+The chart should show TWO data series for each fiscal year from 2025-26 to 2029-30:
+- Blue bars: Effect of spending decisions on borrowing
+- Purple bars: Effect of tax decisions on borrowing
+
+The chart can be either grouped bars (side-by-side) OR stacked bars - both formats are acceptable.
+
+Expected data (in GBP billions):
+
+Fiscal Year | Spending (blue) | Tax (purple)
+2025-26     | +4.9            | -1.3
+2026-27     | +6.6            | -0.7
+2027-28     | +16.0           | -6.1
+2028-29     | +12.9           | -13.9
+2029-30     | +11.3           | -26.1
+
+Note: Spending values are POSITIVE (increasing borrowing), tax values are NEGATIVE (reducing borrowing).
+
+Please evaluate the following criteria. For each, answer PASS or FAIL:
+
+1. IS_BAR_CHART: Is this a bar chart (grouped or stacked) with two data series per year? (Not a line chart, pie chart, etc.)
+2. CORRECT_COLORS: Are spending decisions shown in blue and tax decisions shown in purple (or very close shades)?
+3. CORRECT_YEARS: Does the chart show all 5 fiscal years (2025-26 through 2029-30)?
+4. TAX_NEGATIVE: Are all tax decision values negative (showing below zero or as negative contribution if stacked)?
+5. APPROXIMATE_VALUES: Do the values approximately match the expected data listed above?
+
+Format your response as:
+IS_BAR_CHART: PASS/FAIL
+CORRECT_COLORS: PASS/FAIL
+CORRECT_YEARS: PASS/FAIL
+TAX_NEGATIVE: PASS/FAIL
+APPROXIMATE_VALUES: PASS/FAIL
+
+Then provide a brief explanation."""
+
+        response = await self.grader_client.responses.create(
+            model="gpt-5-mini",
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:image/png;base64,{image_b64}",
+                        },
+                        {
+                            "type": "input_text",
+                            "text": grader_prompt,
+                        },
+                    ],
+                }
+            ],
+            # NO temperature parameter (per CLAUDE.md)
+        )
+
+        grading_text = response.output_text or ""
+
+        checks = {}
+        for criterion in ["IS_BAR_CHART", "CORRECT_COLORS", "CORRECT_YEARS",
+                          "TAX_NEGATIVE", "APPROXIMATE_VALUES"]:
+            pattern = rf"{criterion}\s*:\s*(PASS|FAIL)"
+            match = re.search(pattern, grading_text.upper())
+            checks[criterion] = match.group(1) == "PASS" if match else False
+
+        passed_checks = sum(checks.values())
+        score = passed_checks / len(checks)
+
+        return {
+            "score": score,
+            "checks": checks,
+            "details": grading_text,
+        }
+
+    async def _grade_policy_decisions_task(self) -> dict[str, Any]:
+        """Grade the policy decisions task by validating both files."""
+        spreadsheet_result: dict[str, Any] | None = None
+        chart_result: dict[str, Any] | None = None
+        errors: list[str] = []
+
+        # Download both files from sandbox
+        xlsx_bytes: bytes | None = None
+        png_bytes: bytes | None = None
+
+        try:
+            xlsx_bytes = await self.sandbox.download("/home/ubuntu/policy_decisions.xlsx")
+        except Exception as e:
+            errors.append(f"Spreadsheet download failed: {str(e)}")
+
+        try:
+            png_bytes = await self.sandbox.download("/home/ubuntu/policy_decisions.png")
+        except Exception as e:
+            errors.append(f"Chart image download failed: {str(e)}")
+
+        # Grade both files concurrently
+        tasks = []
+        if xlsx_bytes:
+            tasks.append(self._grade_policy_decisions_spreadsheet(xlsx_bytes))
+        if png_bytes:
+            tasks.append(self._grade_policy_decisions_chart(png_bytes))
+
+        if tasks:
+            results = await asyncio.gather(*tasks)
+            idx = 0
+            if xlsx_bytes:
+                spreadsheet_result = results[idx]
+                idx += 1
+            if png_bytes:
+                chart_result = results[idx]
+
+        # Default scores for missing files
+        spreadsheet_score = spreadsheet_result["score"] if spreadsheet_result else 0.0
+        chart_score = chart_result["score"] if chart_result else 0.0
+        combined_reward = 0.5 * spreadsheet_score + 0.5 * chart_score
+
+        # Format display text
+        display_lines = [
+            "Policy Decisions Task Evaluation",
+            "=" * 60,
+            "",
+            f"SPREADSHEET VALIDATION ({spreadsheet_score:.0%}):",
+        ]
+
+        if spreadsheet_result and spreadsheet_result.get("checks"):
+            for check_name, passed in spreadsheet_result["checks"].items():
+                status = "PASS" if passed else "FAIL"
+                display_lines.append(f"  {status}: {check_name}")
+        elif not xlsx_bytes:
+            display_lines.append("  File not found: /home/ubuntu/policy_decisions.xlsx")
+
+        display_lines.append("")
+        display_lines.append(f"CHART IMAGE VALIDATION ({chart_score:.0%}):")
+
+        if chart_result and chart_result.get("checks"):
+            for check_name, passed in chart_result["checks"].items():
+                status = "PASS" if passed else "FAIL"
+                display_lines.append(f"  {status}: {check_name}")
+        elif not png_bytes:
+            display_lines.append("  File not found: /home/ubuntu/policy_decisions.png")
+
+        display_lines.append("")
+        display_lines.append("=" * 60)
+        display_lines.append(f"Combined Reward: {combined_reward:.2f}")
+
+        if errors:
+            display_lines.append(f"Errors: {'; '.join(errors)}")
+
+        return {
+            "display_text": "\n".join(display_lines),
+            "metadata": {
+                "task_id": "budget_2025_policy_decisions",
+                "spreadsheet_result": spreadsheet_result,
+                "chart_result": chart_result,
+                "combined_reward": combined_reward,
+                "errors": errors,
+            },
+            "reward": combined_reward,
+        }
+
+    async def _grade_current_budget_deficit_spreadsheet(self, xlsx_bytes: bytes) -> dict[str, Any]:
+        """Grade the current budget deficit spreadsheet using gpt-5-mini by extracting data to text."""
+        # Read Excel file and extract data
+        wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes))
+
+        # Extract all data from all sheets into text format
+        spreadsheet_text = ""
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            spreadsheet_text += f"Sheet: {sheet_name}\n"
+            spreadsheet_text += "-" * 40 + "\n"
+
+            for row in ws.iter_rows(values_only=True):
+                # Convert row to strings, handling None values
+                row_strs = [str(cell) if cell is not None else "" for cell in row]
+                spreadsheet_text += " | ".join(row_strs) + "\n"
+
+            spreadsheet_text += "\n"
+
+        gt = CURRENT_BUDGET_DEFICIT_GROUND_TRUTH
+        grader_prompt = f"""You are evaluating a spreadsheet that should contain UK current budget deficit forecasts (as % of GDP).
+
+The ground truth data is:
+
+Fiscal Years: {', '.join(gt['years'])}
+October 2024 budget (% GDP): {', '.join(str(v) for v in gt['budget_2024'])}
+November 2025 budget (% GDP): {', '.join(str(v) for v in gt['budget_2025'])}
+
+Here is the spreadsheet content:
+
+{spreadsheet_text}
+
+The spreadsheet may have rows or columns in any order, and headers may vary. Please evaluate the following criteria. For each, answer PASS or FAIL:
+
+1. YEARS_PRESENT: Does the spreadsheet contain all 5 fiscal years (2025-26, 2026-27, 2027-28, 2028-29, 2029-30) in some form?
+2. BUDGET_2024_VALUES: Does the spreadsheet contain the October 2024 budget values (0.9, 0.2, -0.3, -0.3, -0.3) or values very close to them (within 0.1)?
+3. BUDGET_2025_VALUES: Does the spreadsheet contain the November 2025 budget values (1.7, 0.9, 0.1, -0.1, -0.6) or values very close to them (within 0.1)?
+
+Format your response as:
+YEARS_PRESENT: PASS/FAIL
+BUDGET_2024_VALUES: PASS/FAIL
+BUDGET_2025_VALUES: PASS/FAIL
+
+Then provide a brief explanation."""
+
+        response = await self.grader_client.responses.create(
+            model="gpt-5-mini",
+            input=[{"role": "user", "content": grader_prompt}],
+            # NO temperature parameter (per CLAUDE.md)
+        )
+
+        grading_text = response.output_text or ""
+
+        checks = {}
+        for criterion in ["YEARS_PRESENT", "BUDGET_2024_VALUES", "BUDGET_2025_VALUES"]:
+            pattern = rf"{criterion}\s*:\s*(PASS|FAIL)"
+            match = re.search(pattern, grading_text.upper())
+            checks[criterion] = match.group(1) == "PASS" if match else False
+
+        passed_checks = sum(checks.values())
+        score = passed_checks / len(checks)
+
+        return {
+            "score": score,
+            "checks": checks,
+            "details": grading_text,
+        }
+
+    async def _grade_current_budget_deficit_chart(self, png_bytes: bytes) -> dict[str, Any]:
+        """Grade the current budget deficit chart image using gpt-5-mini vision."""
+        image_b64 = base64.b64encode(png_bytes).decode("utf-8")
+
+        grader_prompt = """You are evaluating a line graph showing current budget deficit forecasts (as % of GDP).
+
+The chart should show TWO lines for fiscal years 2025-26 through 2029-30:
+- Green line: October 2024 budget forecast
+- Yellow line: November 2025 budget forecast
+
+Expected data (% of GDP):
+
+Fiscal Year | Oct 2024 (green) | Nov 2025 (yellow)
+2025-26     | 0.9              | 1.7
+2026-27     | 0.2              | 0.9
+2027-28     | -0.3             | 0.1
+2028-29     | -0.3             | -0.1
+2029-30     | -0.3             | -0.6
+
+Note: Negative values indicate a surplus, positive values indicate a deficit.
+
+Please evaluate the following criteria. For each, answer PASS or FAIL:
+
+1. IS_LINE_GRAPH: Is this a line graph (not a bar chart, scatter plot, etc.) showing two distinct lines?
+2. CORRECT_COLORS: Is one line green (for Oct 2024) and one line yellow (for Nov 2025)?
+3. CORRECT_YEARS: Does the chart show all 5 fiscal years (2025-26 through 2029-30) on the x-axis?
+4. APPROXIMATE_VALUES: Do the line values approximately match the expected data listed above? The green line should start around 0.9 and trend to -0.3, while the yellow line should start around 1.7 and trend to -0.6.
+5. AXES_LABELED: Are the axes properly labeled (fiscal years on x-axis, % GDP or similar on y-axis)?
+
+Format your response as:
+IS_LINE_GRAPH: PASS/FAIL
+CORRECT_COLORS: PASS/FAIL
+CORRECT_YEARS: PASS/FAIL
+APPROXIMATE_VALUES: PASS/FAIL
+AXES_LABELED: PASS/FAIL
+
+Then provide a brief explanation."""
+
+        response = await self.grader_client.responses.create(
+            model="gpt-5-mini",
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:image/png;base64,{image_b64}",
+                        },
+                        {
+                            "type": "input_text",
+                            "text": grader_prompt,
+                        },
+                    ],
+                }
+            ],
+            # NO temperature parameter (per CLAUDE.md)
+        )
+
+        grading_text = response.output_text or ""
+
+        checks = {}
+        for criterion in ["IS_LINE_GRAPH", "CORRECT_COLORS", "CORRECT_YEARS",
+                          "APPROXIMATE_VALUES", "AXES_LABELED"]:
+            pattern = rf"{criterion}\s*:\s*(PASS|FAIL)"
+            match = re.search(pattern, grading_text.upper())
+            checks[criterion] = match.group(1) == "PASS" if match else False
+
+        passed_checks = sum(checks.values())
+        score = passed_checks / len(checks)
+
+        return {
+            "score": score,
+            "checks": checks,
+            "details": grading_text,
+        }
+
+    async def _grade_current_budget_deficit_task(self) -> dict[str, Any]:
+        """Grade the current budget deficit task by validating both files."""
+        spreadsheet_result: dict[str, Any] | None = None
+        chart_result: dict[str, Any] | None = None
+        errors: list[str] = []
+
+        # Download both files from sandbox
+        xlsx_bytes: bytes | None = None
+        png_bytes: bytes | None = None
+
+        try:
+            xlsx_bytes = await self.sandbox.download("/home/ubuntu/current_budget_deficit.xlsx")
+        except Exception as e:
+            errors.append(f"Spreadsheet download failed: {str(e)}")
+
+        try:
+            png_bytes = await self.sandbox.download("/home/ubuntu/current_budget_deficit.png")
+        except Exception as e:
+            errors.append(f"Chart image download failed: {str(e)}")
+
+        # Grade both files concurrently
+        tasks = []
+        if xlsx_bytes:
+            tasks.append(self._grade_current_budget_deficit_spreadsheet(xlsx_bytes))
+        if png_bytes:
+            tasks.append(self._grade_current_budget_deficit_chart(png_bytes))
+
+        if tasks:
+            results = await asyncio.gather(*tasks)
+            idx = 0
+            if xlsx_bytes:
+                spreadsheet_result = results[idx]
+                idx += 1
+            if png_bytes:
+                chart_result = results[idx]
+
+        # Default scores for missing files
+        spreadsheet_score = spreadsheet_result["score"] if spreadsheet_result else 0.0
+        chart_score = chart_result["score"] if chart_result else 0.0
+        combined_reward = 0.5 * spreadsheet_score + 0.5 * chart_score
+
+        # Format display text
+        display_lines = [
+            "Current Budget Deficit Task Evaluation",
+            "=" * 60,
+            "",
+            f"SPREADSHEET VALIDATION ({spreadsheet_score:.0%}):",
+        ]
+
+        if spreadsheet_result and spreadsheet_result.get("checks"):
+            for check_name, passed in spreadsheet_result["checks"].items():
+                status = "PASS" if passed else "FAIL"
+                display_lines.append(f"  {status}: {check_name}")
+        elif not xlsx_bytes:
+            display_lines.append("  File not found: /home/ubuntu/current_budget_deficit.xlsx")
+
+        display_lines.append("")
+        display_lines.append(f"CHART IMAGE VALIDATION ({chart_score:.0%}):")
+
+        if chart_result and chart_result.get("checks"):
+            for check_name, passed in chart_result["checks"].items():
+                status = "PASS" if passed else "FAIL"
+                display_lines.append(f"  {status}: {check_name}")
+        elif not png_bytes:
+            display_lines.append("  File not found: /home/ubuntu/current_budget_deficit.png")
+
+        display_lines.append("")
+        display_lines.append("=" * 60)
+        display_lines.append(f"Combined Reward: {combined_reward:.2f}")
+
+        if errors:
+            display_lines.append(f"Errors: {'; '.join(errors)}")
+
+        return {
+            "display_text": "\n".join(display_lines),
+            "metadata": {
+                "task_id": "budget_deficit_comparison",
+                "spreadsheet_result": spreadsheet_result,
+                "chart_result": chart_result,
+                "combined_reward": combined_reward,
+                "errors": errors,
+            },
+            "reward": combined_reward,
+        }
+
+    async def _grade_borrowing_task(self) -> dict[str, Any]:
+        """Grade the borrowing chart task by sending both files to gpt-5-mini."""
+        spreadsheet_result: dict[str, Any] | None = None
+        chart_result: dict[str, Any] | None = None
+        errors: list[str] = []
+
+        # Download both files from sandbox
+        xlsx_bytes: bytes | None = None
+        png_bytes: bytes | None = None
+
+        try:
+            xlsx_bytes = await self.sandbox.download("/home/ubuntu/changes_borrowing.xlsx")
+        except Exception as e:
+            errors.append(f"Spreadsheet download failed: {str(e)}")
+
+        try:
+            png_bytes = await self.sandbox.download("/home/ubuntu/changes_borrowing.png")
+        except Exception as e:
+            errors.append(f"Chart image download failed: {str(e)}")
+
+        # Grade both files concurrently
+        tasks = []
+        if xlsx_bytes:
+            tasks.append(self._grade_spreadsheet(xlsx_bytes))
+        if png_bytes:
+            tasks.append(self._grade_chart_image(png_bytes))
+
+        if tasks:
+            results = await asyncio.gather(*tasks)
+            idx = 0
+            if xlsx_bytes:
+                spreadsheet_result = results[idx]
+                idx += 1
+            if png_bytes:
+                chart_result = results[idx]
+
+        # Default scores for missing files
+        spreadsheet_score = spreadsheet_result["score"] if spreadsheet_result else 0.0
+        chart_score = chart_result["score"] if chart_result else 0.0
+        combined_reward = 0.5 * spreadsheet_score + 0.5 * chart_score
+
+        # Format display text
+        display_lines = [
+            "Borrowing Forecast Task Evaluation",
+            "=" * 60,
+            "",
+            f"SPREADSHEET VALIDATION ({spreadsheet_score:.0%}):",
+        ]
+
+        if spreadsheet_result and spreadsheet_result.get("checks"):
+            for check_name, passed in spreadsheet_result["checks"].items():
+                status = "PASS" if passed else "FAIL"
+                display_lines.append(f"  {status}: {check_name}")
+        elif not xlsx_bytes:
+            display_lines.append("  File not found: /home/ubuntu/changes_borrowing.xlsx")
+
+        display_lines.append("")
+        display_lines.append(f"CHART IMAGE VALIDATION ({chart_score:.0%}):")
+
+        if chart_result and chart_result.get("checks"):
+            for check_name, passed in chart_result["checks"].items():
+                status = "PASS" if passed else "FAIL"
+                display_lines.append(f"  {status}: {check_name}")
+        elif not png_bytes:
+            display_lines.append("  File not found: /home/ubuntu/changes_borrowing.png")
+
+        display_lines.append("")
+        display_lines.append("=" * 60)
+        display_lines.append(f"Combined Reward: {combined_reward:.2f}")
+
+        if errors:
+            display_lines.append(f"Errors: {'; '.join(errors)}")
+
+        return {
+            "display_text": "\n".join(display_lines),
+            "metadata": {
+                "task_id": "budget_2025_borrowing_chart",
+                "spreadsheet_result": spreadsheet_result,
+                "chart_result": chart_result,
+                "combined_reward": combined_reward,
+                "errors": errors,
+            },
+            "reward": combined_reward,
+        }
+
+    def _extract_pptx_text(self, pptx_bytes: bytes) -> str:
+        """Extract all text from all slides of a PowerPoint presentation."""
+        presentation = pptx.Presentation(io.BytesIO(pptx_bytes))
+
+        all_text_parts = []
+        for slide_num, slide in enumerate(presentation.slides, 1):
+            slide_text_parts = [f"=== Slide {slide_num} ==="]
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    for paragraph in shape.text_frame.paragraphs:
+                        text = paragraph.text.strip()
+                        if text:
+                            slide_text_parts.append(text)
+                if shape.has_table:
+                    for row in shape.table.rows:
+                        for cell in row.cells:
+                            text = cell.text.strip()
+                            if text:
+                                slide_text_parts.append(text)
+            all_text_parts.append("\n".join(slide_text_parts))
+
+        return "\n\n".join(all_text_parts)
+
+    async def _grade_presentation_task(self) -> dict[str, Any]:
+        """Grade the presentation task by extracting text from .pptx and evaluating against rubrics."""
+        # Download .pptx from sandbox
+        try:
+            pptx_bytes = await self.sandbox.download(self.task_data["output_path"])
+        except Exception as e:
+            return {
+                "display_text": f"Failed to download presentation at {self.task_data['output_path']}: {str(e)}\n"
+                               f"Please ensure you've saved the .pptx file to this exact path.",
+                "metadata": {
+                    "task_id": self.task_data["task_id"],
+                    "error": "file_not_found",
+                    "details": str(e),
+                },
+                "reward": 0.0,
+            }
+
+        # Extract text from presentation
+        try:
+            presentation_text = self._extract_pptx_text(pptx_bytes)
+        except Exception as e:
+            return {
+                "display_text": f"Failed to parse .pptx file: {str(e)}\n"
+                               f"The file may be corrupted or not a valid PowerPoint file.",
+                "metadata": {
+                    "task_id": self.task_data["task_id"],
+                    "error": "parse_error",
+                    "details": str(e),
+                },
+                "reward": 0.0,
+            }
+
+        # Grade extracted text against rubrics using the existing rubric grading method
+        grading_results = await self._grade_with_rubric(presentation_text)
+
+        return grading_results
 
     async def _evaluate_criterion(
         self, report: str, criterion: str, criterion_id: str
@@ -138,7 +1164,7 @@ Then call `submit_answer` tool to submit for evaluation.
         Use gpt-5-mini to evaluate a single criterion.
         Per CLAUDE.md: Use gpt-5-mini, no temperature parameter.
         """
-        grader_prompt = f"""You are evaluating a policy report on the 2025 Budget.
+        grader_prompt = f"""You are evaluating a policy report on the {self.task_data['budget_name']}.
 
 Report to evaluate:
 {report}
@@ -148,13 +1174,13 @@ Criterion to check:
 
 Does the report meet this criterion? Provide brief reasoning (1-2 sentences), then answer either "PASS" or "FAIL"."""
 
-        response = await self.grader_client.chat.completions.create(
+        response = await self.grader_client.responses.create(
             model="gpt-5-mini",  # MUST use gpt-5-mini for graders
-            messages=[{"role": "user", "content": grader_prompt}],
+            input=[{"role": "user", "content": grader_prompt}],
             # NO temperature parameter (per CLAUDE.md)
         )
 
-        grading_text = response.choices[0].message.content or ""
+        grading_text = response.output_text or ""
 
         # Parse result
         upper_text = grading_text.upper()
@@ -244,11 +1270,97 @@ Does the report meet this criterion? Provide brief reasoning (1-2 sentences), th
             "reward": reward,
         }
 
+    async def _grade_qa_task(self, submitted_text: str) -> dict[str, Any]:
+        """
+        Grade a Q&A task answer using gpt-5-mini.
+        Checks if answer is equivalent to expected answer with tolerance for variations.
+        Per CLAUDE.md: Use gpt-5-mini, no temperature parameter.
+        """
+        expected = self.task_data["expected_answer"]
+        question = self.task_data["question"]
+
+        grader_prompt = f"""You are evaluating an answer to a Budget 2025 question.
+
+Question: {question}
+
+Expected Answer: {expected}
+
+Submitted Answer:
+{submitted_text}
+
+The expected answer is "{expected}". Does the submitted text convey the same information?
+
+Consider these equivalent:
+- "-£16bn", "-16bn", "-£16 billion", "negative £16bn", "decrease of £16bn"
+- "a decrease of 16 billion pounds", "reduced by 16bn", "down £16 billion"
+- Minor variations in formatting, phrasing, or explanation around the core figure
+
+The answer should indicate a NEGATIVE effect of approximately 16 billion pounds on revenues.
+
+Does the submitted answer match the expected answer?
+
+Answer with ONE of:
+- "PASS" if the answer is correct
+- "FAIL" if the answer is incorrect or missing the key information
+
+Then provide brief reasoning (1-2 sentences)."""
+
+        response = await self.grader_client.responses.create(
+            model="gpt-5-mini",  # MUST use gpt-5-mini for graders
+            input=[{"role": "user", "content": grader_prompt}],
+            # NO temperature parameter (per CLAUDE.md)
+        )
+
+        grading_text = response.output_text or ""
+
+        # Parse result - look for PASS/FAIL
+        upper_text = grading_text.upper()
+        passed = "PASS" in upper_text and "FAIL" not in upper_text
+        reward = 1.0 if passed else 0.0
+
+        # Format display text
+        display_lines = [
+            "Q&A Task Evaluation",
+            "=" * 60,
+            "",
+            f"Question: {question}",
+            f"Expected Answer: {expected}",
+            "",
+            "Submitted Answer:",
+            "-" * 60,
+            submitted_text,
+            "-" * 60,
+            "",
+            f"Result: {'✅ PASS' if passed else '❌ FAIL'}",
+            f"Reward: {reward:.2f}",
+            "",
+            "Grader Reasoning:",
+            grading_text,
+            "",
+            "=" * 60,
+        ]
+
+        return {
+            "display_text": "\n".join(display_lines),
+            "metadata": {
+                "task_id": self.task_data["task_id"],
+                "question": question,
+                "expected_answer": expected,
+                "submitted_answer": submitted_text,
+                "passed": passed,
+                "grader_reasoning": grading_text,
+                "reward": reward,
+            },
+            "reward": reward,
+        }
+
     @tool
     async def submit_answer(self, params: SubmitAnswerInput) -> ToolOutput:
         """
-        Submit final report for evaluation.
-        Expects the report to be written to /home/ubuntu/final_report.md
+        Submit final output for evaluation.
+        - For Q&A tasks: expects answer at specified output_path
+        - For report tasks: expects report at /home/ubuntu/final_report.md
+        - For chart tasks: expects xlsx and png files
         """
         if self.submitted:
             return ToolOutput(
@@ -258,26 +1370,60 @@ Does the report meet this criterion? Provide brief reasoning (1-2 sentences), th
                 finished=True,
             )
 
-        # Download report from sandbox
-        try:
-            report_content = await self.sandbox.download(self.task_data["output_path"])
-            report_text = report_content.decode("utf-8")
-        except Exception as e:
-            return ToolOutput(
-                blocks=[
-                    TextBlock(
-                        text=f"Failed to read report at {self.task_data['output_path']}\n\n"
-                        f"Error: {str(e)}\n\n"
-                        f"Please ensure you've written your report to this exact path using the write tool."
-                    )
-                ],
-                metadata={"error": "file_not_found", "details": str(e)},
-                reward=0.0,
-                finished=False,
-            )
+        task_type = self.task_data.get("task_type", "report")  # default to report
 
-        # Grade against rubric
-        grading_results = await self._grade_with_rubric(report_text)
+        # Branch based on task type
+        if task_type == "qa":
+            # Q&A task - download answer file and grade
+            try:
+                answer_content = await self.sandbox.download(self.task_data["output_path"])
+                answer_text = answer_content.decode("utf-8")
+            except Exception as e:
+                return ToolOutput(
+                    blocks=[
+                        TextBlock(
+                            text=f"Failed to read answer file at {self.task_data['output_path']}\n\n"
+                            f"Error: {str(e)}\n\n"
+                            f"Please ensure you've written your answer to this exact path using the write tool."
+                        )
+                    ],
+                    metadata={"error": "file_not_found", "details": str(e)},
+                    reward=0.0,
+                    finished=False,
+                )
+            grading_results = await self._grade_qa_task(answer_text)
+
+        elif task_type == "chart":
+            # Check which chart task
+            if self.task_data["task_id"] == "budget_2025_policy_decisions":
+                grading_results = await self._grade_policy_decisions_task()
+            elif self.task_data["task_id"] == "budget_deficit_comparison":
+                grading_results = await self._grade_current_budget_deficit_task()
+            else:  # budget_2025_borrowing_chart
+                grading_results = await self._grade_borrowing_task()
+
+        elif task_type == "presentation":
+            grading_results = await self._grade_presentation_task()
+
+        else:  # task_type == "report"
+            # Standard rubric-based report grading
+            try:
+                report_content = await self.sandbox.download(self.task_data["output_path"])
+                report_text = report_content.decode("utf-8")
+            except Exception as e:
+                return ToolOutput(
+                    blocks=[
+                        TextBlock(
+                            text=f"Failed to read report at {self.task_data['output_path']}\n\n"
+                            f"Error: {str(e)}\n\n"
+                            f"Please ensure you've written your report to this exact path using the write tool."
+                        )
+                    ],
+                    metadata={"error": "file_not_found", "details": str(e)},
+                    reward=0.0,
+                    finished=False,
+                )
+            grading_results = await self._grade_with_rubric(report_text)
 
         self.submitted = True
 

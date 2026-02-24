@@ -28,6 +28,18 @@ class GlobInput(BaseModel):
     pattern: str = Field(..., description="Glob pattern to match files")
 
 
+def sanitize_utf8(text: str) -> str:
+    """
+    Sanitize a string to ensure it only contains valid UTF-8 characters.
+    Replaces invalid bytes and surrogate pairs with replacement characters.
+    """
+    if not text:
+        return text
+    # Encode to UTF-8 with error handling, then decode back
+    # This replaces invalid sequences (including surrogates) with U+FFFD (�)
+    return text.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+
+
 class CLIEnvironment(Environment):
     """Base class for environments that provide CLI-like tools (bash, read, write, etc.)"""
 
@@ -39,6 +51,9 @@ class CLIEnvironment(Environment):
         """Execute a bash command in the sandbox"""
         try:
             output, exit_code = await self.sandbox.run(params.command)
+
+            # Sanitize output to prevent JSON serialization errors
+            output = sanitize_utf8(output)
 
             display_text = f"Command: {params.command}\n"
             display_text += f"Exit code: {exit_code}\n\n"
@@ -63,7 +78,10 @@ class CLIEnvironment(Environment):
         """Read a file from the sandbox"""
         try:
             content_bytes = await self.sandbox.download(params.file_path)
-            content = content_bytes.decode("utf-8")
+            content = content_bytes.decode("utf-8", errors='replace')
+
+            # Sanitize content to prevent JSON serialization errors
+            content = sanitize_utf8(content)
 
             # Truncate if too long for display
             max_display = 10000
@@ -115,6 +133,9 @@ class CLIEnvironment(Environment):
             grep_cmd = f"grep -r '{params.pattern}' {params.path}"
             output, exit_code = await self.sandbox.run(grep_cmd)
 
+            # Sanitize output to prevent JSON serialization errors
+            output = sanitize_utf8(output)
+
             if exit_code == 0:
                 display_text = f"Search results for '{params.pattern}':\n\n{output}"
             elif exit_code == 1:
@@ -143,6 +164,9 @@ class CLIEnvironment(Environment):
             # Use find command
             find_cmd = f"find /orwd_data -name '{params.pattern}' -type f"
             output, exit_code = await self.sandbox.run(find_cmd)
+
+            # Sanitize output to prevent JSON serialization errors
+            output = sanitize_utf8(output)
 
             if exit_code == 0 and output:
                 files = output.strip().split("\n")

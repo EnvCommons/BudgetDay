@@ -14,7 +14,8 @@ async def main() -> None:
     oai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
     environment = or_client.environments.get(
-        name="GeneralReasoning/BudgetDay"
+        name="GeneralReasoning/BudgetDay",
+        base_url="http://localhost:8080"
     )
 
     tasks = await environment.list_tasks(split="train")
@@ -29,7 +30,7 @@ async def main() -> None:
         print("No tasks available!")
         return
 
-    task = tasks[0]
+    task = tasks[8]
     print(f"Running task: {task.task_spec}")
     print("=" * 80)
     print()
@@ -70,7 +71,7 @@ async def main() -> None:
         rollout.log_openai_response(message=input_list[0], is_finished=False)
 
         turn_count = 0
-        max_turns = 50  # Budget analysis might need more turns
+        max_turns = 200  # Budget analysis might need more turns
 
         while not finished and turn_count < max_turns:
             turn_count += 1
