@@ -113,18 +113,13 @@ You are a policy analyst at a fiscal policy research organization. Your task is 
 
 Budget documents are available at `/orwd_data/` (mounted read-only).
 
-**File Format**: MHTML (MIME-encoded HTML) files are text-based. You can:
-- Use `read <file_path>` to view contents
-- Use `grep <pattern> <path>` to search for specific terms or numbers
-- Use `bash` to run Python scripts for parsing if needed
-- Use standard text processing tools
-
 ## Your Task
 
 Write a comprehensive initial response that provides rapid but serious analysis of the Budget.
 """
 
         submission_instructions = f"""
+
 ## Submission
 
 When ready, write your final report to: **{self.task_data['output_path']}**
