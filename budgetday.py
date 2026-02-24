@@ -177,21 +177,16 @@ class BudgetDay(CLIEnvironment):
             raise ValueError("OpenAI API key required in secrets for rubric grading")
         self.grader_client = openai.AsyncClient(api_key=api_key)
 
-        # Configure sandbox with selective data mounting
-        bucket_config_kwargs = {
-            "mount_path": "/orwd_data",
-            "read_only": True,
-        }
-        # Only mount specific directory if data_dir is specified
-        if self.task_data.get("data_dir"):
-            bucket_config_kwargs["only_dir"] = self.task_data["data_dir"]
-
         self.sandbox_settings = SandboxSettings(
             environment="GeneralReasoning/BudgetDay",
             image="generalreasoning/knowledge-worker:latest",
             machine_size="0.5:0.5",
             block_network=False,
-            bucket_config=SandboxBucketConfig(**bucket_config_kwargs),
+            bucket_config=SandboxBucketConfig(
+                mount_path="/orwd_data",
+                read_only=True,
+                only_dir=self.task_data["data_dir"] if self.task_data.get("data_dir") else None,  # Only mount budgetday/2025
+            ),
         )
 
         or_client = AsyncOpenReward(api_key=secrets.get("api_key", ""))
@@ -243,8 +238,6 @@ Write a comprehensive initial response that provides rapid but serious analysis 
 When ready, write your final report to: **{self.task_data['output_path']}**
 
 Then call `submit_answer` tool to submit for evaluation.
-
-Your report will be graded against 30 criteria. Each criterion contributes 1 point. Score 27/30 = 0.9 reward.
 """
 
         prompt_text = base_prompt + submission_instructions
