@@ -27,6 +27,16 @@ with open(ENV_PATH / "rubrics.json") as f:
 # Define tasks
 TASKS = [
     {
+        "task_id": "budget_2020_psnb_forecast",
+        "task_type": "chart",
+        "year": 2020,
+        "budget_name": "Budget 2020",
+        "data_dir": "2020",
+        "output_path": "/home/ubuntu/psnb_changes.xlsx",
+        "output_path_png": "/home/ubuntu/psnb_changes.png",
+        "description": "Create spreadsheet showing changes to OBR's forecast for PSNB since restated 2019 forecast",
+    },
+    {
         "task_id": "budget_2022_initial_response",
         "task_type": "report",
         "year": 2022,
@@ -112,6 +122,24 @@ TASKS = [
         "output_path": "/home/ubuntu/tax_measures.pptx",
         "description": "Create a PowerPoint presentation summarizing key tax measures from the Autumn Budget 2024",
     },
+    {
+        "task_id": "ai_measures_summary_2020_2025",
+        "task_type": "report",
+        "year": 2025,
+        "budget_name": "AI Measures Summary 2020-2025",
+        "data_dir": "2025",
+        "output_path": "/home/ubuntu/ai_measures_report.md",
+        "description": "Summarize all AI-related measures and announcements from budgets and autumn statements between 2020 and 2025, including specific funding amounts, initiatives, and strategic programmes.",
+    },
+    {
+        "task_id": "budget_2025_tax_proposals",
+        "task_type": "tax_proposal",
+        "year": 2025,
+        "budget_name": "Budget 2025 Tax Policy",
+        "data_dir": "2025",
+        "output_path": "/home/ubuntu/tax_proposals.md",
+        "description": "Propose tax changes to reduce borrowing for 2026-27 by half using provided tax raising guidelines",
+    },
 ]
 
 
@@ -132,6 +160,13 @@ CURRENT_BUDGET_DEFICIT_GROUND_TRUTH = {
     "years": ["2025-26", "2026-27", "2027-28", "2028-29", "2029-30"],
     "budget_2024": [0.9, 0.2, -0.3, -0.3, -0.3],  # October 2024 (green line)
     "budget_2025": [1.7, 0.9, 0.1, -0.1, -0.6],   # November 2025 (yellow line)
+}
+
+PSNB_2020_GROUND_TRUTH = {
+    "years": ["2019-20", "2020-21", "2021-22", "2022-23", "2023-24"],
+    "restated_march_2019": [47.6, 40.2, 37.6, 35.4, 33.3],
+    "budget_2020": [47.4, 54.8, 66.7, 61.5, 60.2],
+    "difference": [-0.2, 14.6, 29.1, 26.0, 26.9],
 }
 
 
@@ -208,7 +243,9 @@ class BudgetDay(CLIEnvironment):
             return [TextBlock(text=self._get_qa_prompt())]
         elif task_type == "chart":
             # Check which chart task
-            if self.task_data["task_id"] == "budget_2025_policy_decisions":
+            if self.task_data["task_id"] == "budget_2020_psnb_forecast":
+                return [TextBlock(text=self._get_psnb_2020_prompt())]
+            elif self.task_data["task_id"] == "budget_2025_policy_decisions":
                 return [TextBlock(text=self._get_policy_decisions_prompt())]
             elif self.task_data["task_id"] == "budget_deficit_comparison":
                 return [TextBlock(text=self._get_current_budget_deficit_prompt())]
@@ -216,6 +253,10 @@ class BudgetDay(CLIEnvironment):
                 return [TextBlock(text=self._get_borrowing_chart_prompt())]
         elif task_type == "presentation":
             return [TextBlock(text=self._get_presentation_prompt())]
+        elif task_type == "tax_proposal":
+            return [TextBlock(text=self._get_tax_proposals_prompt())]
+        elif task_type == "report" and self.task_data["task_id"] == "ai_measures_summary_2020_2025":
+            return [TextBlock(text=self._get_ai_measures_prompt())]
 
         # Base prompt common to all report-writing tasks
         base_prompt = f"""# Task: Draft Initial Response to {self.task_data['budget_name']}
@@ -283,6 +324,48 @@ When both files are ready at the paths above, call `submit_answer` to submit for
 Your submission will be graded on:
 - Accuracy of the spreadsheet data against the official OBR figures
 - Quality and correctness of the bar chart (green bars, correct years, accurate differences)
+"""
+
+    def _get_psnb_2020_prompt(self) -> str:
+        """Return the prompt for the Budget 2020 PSNB forecast comparison task."""
+        return """# Task: Create PSNB Forecast Comparison Chart and Spreadsheet
+
+You are a policy analyst. Your task is to extract PSNB (Public Sector Net Borrowing) forecast data from Budget 2020 documents and create two output files comparing the restated March 2019 OBR forecast with the Budget 2020 forecast.
+
+## Available Data
+
+Budget documents are available at `/orwd_data/` (mounted read-only). The PSNB forecast data can be found within these documents for fiscal years 2019-20 through 2023-24.
+
+You need to find and compare:
+- The restated March 2019 OBR forecast for PSNB for each year
+- The Budget 2020 OBR forecast for PSNB for each year
+- The difference between the two forecasts (Budget 2020 minus restated March 2019)
+
+## Required Outputs
+
+### 1. Spreadsheet: `/home/ubuntu/psnb_changes.xlsx`
+Create an Excel spreadsheet containing:
+- The fiscal years (2019-20 through 2023-24)
+- The restated March 2019 PSNB forecast values for each year (£ billion)
+- The Budget 2020 PSNB forecast values for each year (£ billion)
+- The difference between Budget 2020 and restated March 2019 forecasts for each year (£ billion)
+
+The spreadsheet may be organized as rows or columns - either orientation is acceptable.
+
+### 2. Bar Chart (Optional): `/home/ubuntu/psnb_changes.png`
+Optionally create a bar chart showing the DIFFERENCE in PSNB forecasts (Budget 2020 minus restated March 2019) for each fiscal year from 2019-20 to 2023-24.
+- The x-axis should show the fiscal years (2019-20 through 2023-24)
+- The y-axis should show the change in PSNB (in £ billions)
+- Include appropriate title and axis labels
+- Note: 2019-20 shows a small decrease (-0.2bn), all other years show increases
+
+## Submission
+
+When the spreadsheet is ready (and optionally the chart), call `submit_answer` to submit for evaluation.
+
+Your submission will be graded on:
+- Accuracy of the spreadsheet data against the official OBR figures (tolerance: ±0.5 £bn)
+- Quality and correctness of the bar chart if provided
 """
 
     def _get_qa_prompt(self) -> str:
@@ -398,6 +481,40 @@ Budget documents are available at `/orwd_data/` (mounted read-only). These conta
 Save your presentation as: **{self.task_data['output_path']}**
 
 Then call `submit_answer` to submit for evaluation."""
+
+    def _get_ai_measures_prompt(self) -> str:
+        """Return the prompt for the AI measures summary task."""
+        return f"""# Task: Comprehensive AI Measures Summary 2020-2025
+
+You are tasked with creating a comprehensive summary of all AI-related measures and announcements from UK budgets and autumn statements between 2020 and 2025.
+
+## Your Task
+
+Review budget documents from 2020-2025 and find all AI-related initiatives, creating a comprehensive report.
+
+## Output
+
+Write your comprehensive report to: **{self.task_data['output_path']}**
+
+When complete, call the `submit_answer` tool to submit for evaluation."""
+
+    def _get_tax_proposals_prompt(self) -> str:
+        """Return the prompt for the tax proposals task."""
+        return """# Task: Propose Tax Changes to Reduce Borrowing by Half
+
+You are a civil servant at HM Treasury. Your task is to propose a package of tax changes that will reduce public sector net borrowing (PSNB) for 2026-27 by half.
+
+## Available Data
+
+Budget documents are available at `/orwd_data/` (mounted read-only).
+
+## Output Format
+
+Write your proposals to `/home/ubuntu/tax_proposals.md`
+
+## Submission
+
+When ready, call `submit_answer` to submit your proposals for evaluation."""
 
     async def _grade_spreadsheet(self, xlsx_bytes: bytes) -> dict[str, Any]:
         """Grade the borrowing spreadsheet using gpt-5-mini by extracting data to text."""
@@ -543,6 +660,213 @@ Then provide a brief explanation."""
             "score": score,
             "checks": checks,
             "details": grading_text,
+        }
+
+    async def _grade_psnb_2020_spreadsheet(self, xlsx_bytes: bytes) -> dict[str, Any]:
+        """Grade the PSNB 2020 spreadsheet using gpt-5-mini by extracting data to text."""
+        wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes))
+
+        spreadsheet_text = ""
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            spreadsheet_text += f"Sheet: {sheet_name}\n"
+            spreadsheet_text += "-" * 40 + "\n"
+            for row in ws.iter_rows(values_only=True):
+                row_strs = [str(cell) if cell is not None else "" for cell in row]
+                spreadsheet_text += " | ".join(row_strs) + "\n"
+            spreadsheet_text += "\n"
+
+        gt = PSNB_2020_GROUND_TRUTH
+        grader_prompt = f"""You are evaluating a spreadsheet that should contain UK Budget 2020 PSNB forecast data.
+
+The ground truth data is:
+
+Fiscal Years: {', '.join(gt['years'])}
+Restated March 2019 forecast (£bn): {', '.join(str(v) for v in gt['restated_march_2019'])}
+Budget 2020 forecast (£bn): {', '.join(str(v) for v in gt['budget_2020'])}
+Difference (Budget 2020 minus March 2019): {', '.join(str(v) for v in gt['difference'])}
+
+Here is the spreadsheet content:
+
+{spreadsheet_text}
+
+The spreadsheet may have rows or columns in any order, and headers may vary. Please evaluate the following criteria. For each, answer PASS or FAIL:
+
+1. YEARS_PRESENT: Does the spreadsheet contain all 5 fiscal years (2019-20, 2020-21, 2021-22, 2022-23, 2023-24) in some form?
+2. MARCH_2019_VALUES: Does the spreadsheet contain the restated March 2019 forecast values (47.6, 40.2, 37.6, 35.4, 33.3) or values very close to them (within 0.5)?
+3. BUDGET_2020_VALUES: Does the spreadsheet contain the Budget 2020 forecast values (47.4, 54.8, 66.7, 61.5, 60.2) or values very close to them (within 0.5)?
+4. DIFFERENCE_VALUES: Does the spreadsheet contain the difference values (-0.2, 14.6, 29.1, 26.0, 26.9) or values very close to them (within 0.5)?
+
+Format your response as:
+YEARS_PRESENT: PASS/FAIL
+MARCH_2019_VALUES: PASS/FAIL
+BUDGET_2020_VALUES: PASS/FAIL
+DIFFERENCE_VALUES: PASS/FAIL
+
+Then provide a brief explanation."""
+
+        response = await self.grader_client.responses.create(
+            model="gpt-5-mini",
+            input=[{"role": "user", "content": grader_prompt}],
+        )
+
+        grading_text = response.output_text or ""
+
+        checks = {}
+        for criterion in ["YEARS_PRESENT", "MARCH_2019_VALUES", "BUDGET_2020_VALUES", "DIFFERENCE_VALUES"]:
+            pattern = rf"{criterion}\s*:\s*(PASS|FAIL)"
+            match = re.search(pattern, grading_text.upper())
+            checks[criterion] = match.group(1) == "PASS" if match else False
+
+        passed_checks = sum(checks.values())
+        score = passed_checks / len(checks)
+
+        return {"score": score, "checks": checks, "details": grading_text}
+
+    async def _grade_psnb_2020_chart(self, png_bytes: bytes) -> dict[str, Any]:
+        """Grade the PSNB 2020 chart image using gpt-5-mini vision."""
+        image_b64 = base64.b64encode(png_bytes).decode("utf-8")
+
+        grader_prompt = """You are evaluating a bar chart showing changes in UK PSNB forecasts between Budget 2020 and restated March 2019.
+
+The chart should show the DIFFERENCE in PSNB forecasts (Budget 2020 minus restated March 2019) for fiscal years 2019-20 through 2023-24.
+
+Expected differences (in £ billions):
+- 2019-20: -0.2
+- 2020-21: +14.6
+- 2021-22: +29.1
+- 2022-23: +26.0
+- 2023-24: +26.9
+
+Please evaluate the following criteria. For each, answer PASS or FAIL:
+
+1. IS_BAR_CHART: Is this a bar chart (not a line chart, pie chart, scatter plot, etc.)?
+2. CORRECT_YEARS: Does the chart show all 5 fiscal years (2019-20 through 2023-24)?
+3. NEGATIVE_2019_20: Does the first year (2019-20) show a small negative value (bar slightly below zero)?
+4. POSITIVE_REMAINING: Are all remaining years (2020-21 through 2023-24) showing positive values?
+5. APPROXIMATE_VALUES: Do the bar heights approximately match the expected differences listed above?
+
+Format your response as:
+IS_BAR_CHART: PASS/FAIL
+CORRECT_YEARS: PASS/FAIL
+NEGATIVE_2019_20: PASS/FAIL
+POSITIVE_REMAINING: PASS/FAIL
+APPROXIMATE_VALUES: PASS/FAIL
+
+Then provide a brief explanation."""
+
+        response = await self.grader_client.responses.create(
+            model="gpt-5-mini",
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_image", "image_url": f"data:image/png;base64,{image_b64}"},
+                        {"type": "input_text", "text": grader_prompt},
+                    ],
+                }
+            ],
+        )
+
+        grading_text = response.output_text or ""
+
+        checks = {}
+        for criterion in ["IS_BAR_CHART", "CORRECT_YEARS", "NEGATIVE_2019_20", "POSITIVE_REMAINING", "APPROXIMATE_VALUES"]:
+            pattern = rf"{criterion}\s*:\s*(PASS|FAIL)"
+            match = re.search(pattern, grading_text.upper())
+            checks[criterion] = match.group(1) == "PASS" if match else False
+
+        passed_checks = sum(checks.values())
+        score = passed_checks / len(checks)
+
+        return {"score": score, "checks": checks, "details": grading_text}
+
+    async def _grade_psnb_2020_task(self) -> dict[str, Any]:
+        """Grade the PSNB 2020 task by validating both files."""
+        spreadsheet_result: dict[str, Any] | None = None
+        chart_result: dict[str, Any] | None = None
+        errors: list[str] = []
+
+        xlsx_bytes: bytes | None = None
+        png_bytes: bytes | None = None
+
+        try:
+            xlsx_bytes = await self.sandbox.download("/home/ubuntu/psnb_changes.xlsx")
+        except Exception as e:
+            errors.append(f"Spreadsheet download failed: {str(e)}")
+
+        try:
+            png_bytes = await self.sandbox.download("/home/ubuntu/psnb_changes.png")
+        except Exception:
+            pass  # Chart is optional
+
+        tasks = []
+        if xlsx_bytes:
+            tasks.append(self._grade_psnb_2020_spreadsheet(xlsx_bytes))
+        if png_bytes:
+            tasks.append(self._grade_psnb_2020_chart(png_bytes))
+
+        if tasks:
+            results = await asyncio.gather(*tasks)
+            idx = 0
+            if xlsx_bytes:
+                spreadsheet_result = results[idx]
+                idx += 1
+            if png_bytes:
+                chart_result = results[idx]
+
+        spreadsheet_score = spreadsheet_result["score"] if spreadsheet_result else 0.0
+        chart_score = chart_result["score"] if chart_result else 0.0
+
+        # Spreadsheet is required (70%), chart is optional bonus (30%)
+        if chart_result:
+            combined_reward = 0.7 * spreadsheet_score + 0.3 * chart_score
+        else:
+            combined_reward = spreadsheet_score
+
+        display_lines = [
+            "PSNB 2020 Forecast Task Evaluation",
+            "=" * 60,
+            "",
+            f"SPREADSHEET VALIDATION ({spreadsheet_score:.0%}):",
+        ]
+
+        if spreadsheet_result and spreadsheet_result.get("checks"):
+            for check_name, passed in spreadsheet_result["checks"].items():
+                status = "PASS" if passed else "FAIL"
+                display_lines.append(f"  {status}: {check_name}")
+        elif not xlsx_bytes:
+            display_lines.append("  File not found: /home/ubuntu/psnb_changes.xlsx")
+
+        if chart_result:
+            display_lines.append("")
+            display_lines.append(f"CHART IMAGE VALIDATION (OPTIONAL) ({chart_score:.0%}):")
+            for check_name, passed in chart_result["checks"].items():
+                status = "PASS" if passed else "FAIL"
+                display_lines.append(f"  {status}: {check_name}")
+        elif png_bytes is None:
+            display_lines.append("")
+            display_lines.append("CHART IMAGE: Not provided (optional)")
+
+        display_lines.extend([
+            "",
+            "=" * 60,
+            f"Combined Reward: {combined_reward:.2f}",
+        ])
+
+        if errors:
+            display_lines.append(f"Errors: {'; '.join(errors)}")
+
+        return {
+            "display_text": "\n".join(display_lines),
+            "metadata": {
+                "task_id": "budget_2020_psnb_forecast",
+                "spreadsheet_result": spreadsheet_result,
+                "chart_result": chart_result,
+                "combined_reward": combined_reward,
+                "errors": errors,
+            },
+            "reward": combined_reward,
         }
 
     async def _grade_policy_decisions_spreadsheet(self, xlsx_bytes: bytes) -> dict[str, Any]:
@@ -1150,6 +1474,260 @@ Then provide a brief explanation."""
 
         return grading_results
 
+    async def _grade_tax_proposals_task(self) -> dict[str, Any]:
+        """Grade the tax proposals task using o3-mini reasoning model."""
+        # Download the tax proposals file
+        try:
+            proposals_bytes = await self.sandbox.download(self.task_data["output_path"])
+            proposals_text = proposals_bytes.decode("utf-8")
+        except Exception as e:
+            return {
+                "display_text": f"Failed to download tax proposals at {self.task_data['output_path']}: {str(e)}\n"
+                               f"Please ensure you've written your proposals to this exact path.",
+                "metadata": {
+                    "task_id": self.task_data["task_id"],
+                    "error": "file_not_found",
+                    "details": str(e),
+                },
+                "reward": 0.0,
+            }
+
+        # Use o3-mini reasoning model to parse and calculate
+        target_revenue = 56050  # £56,050m (half of £112.1bn)
+
+        grader_prompt = f"""You are evaluating tax proposals designed to reduce UK public sector net borrowing for 2026-27 by half.
+
+The target is to raise £56,050 million (£56.05 billion) in additional revenue.
+
+Here are the tax proposals submitted:
+
+{proposals_text}
+
+## Tax Raising Guidelines for 2026-27 (all figures in £m)
+
+### Income Tax Rates
+- Change starting rate for savings income by 1p: £0m
+- Change basic rate by 1p: £6,900m
+- Change higher rate by 1p: £1,600m
+- Increase additional rate by 1p (yield): £145m
+- Decrease additional rate by 1p (cost): £175m
+
+### Income Tax Allowances and Reliefs
+- Change personal allowance by £100: £810m
+- Change personal allowance by 1%: £1,000m
+- Change personal allowance by 10%: £10,000m
+- Change Savings allowance by £100 for BR and £50 for HR taxpayers: £0m
+- Change dividend allowance by £100: £0m
+
+### Income Tax Limits
+- Change starting rate limit for savings income by £100: Neg (≈£0m)
+- Change basic rate limit by 1%: £495m
+- Increase basic rate limit by 10% (cost): £4,600m
+- Decrease basic rate limit by 10% (yield): £5,400m
+
+### Income Tax Allowances + Starting + Basic Rate Limits
+- Change all main allowances, starting and basic rate limits by 1%: £1,450m
+- Increase all main allowances, starting and basic rate limits by 10% (cost): £14,400m
+- Decrease all main allowances, starting and basic rate limits by 10% (yield): £14,300m
+
+### National Insurance Contributions Rates
+- Change Class 1 employee main rate by 1 percentage point: £5,350m
+- Change Class 1 employee additional rate by 1 percentage point: £2,000m
+- Change Class 1 employer rate by 1 percentage point: £11,150m
+- Change Class 4 main rate by 1 percentage point: £440m
+- Change Class 4 additional rate by 1 percentage point: £295m
+
+### National Insurance Contribution Limits
+- Change employee entry threshold by £2 per week: £210m
+- Change employer threshold by £2 per week: £420m
+- Change lower profits limit by £104 per year: £15m
+- Change upper profits limit by £520 per year: £10m
+- Change upper earnings limit by £10 per week: £220m
+
+### Child Benefit
+- Increase first child rate by £1 per week (cost): £335m
+- Decrease first child rate by £1 per week (yield): £335m
+- Increase subsequent child rate by £1 per week (cost): £230m
+- Decrease subsequent child rate by £1 per week (yield): £230m
+
+### Corporation Tax
+- Change main rate by 1 percentage point: £3,600m
+
+### Capital Gains Tax
+- Increase Business Asset Disposal Relief rate by 1 percentage point: £10m
+- Increase Business Asset Disposal Relief rate by 5 percentage points: £40m
+- Increase lower Capital Gains Tax rate by 1 percentage point: -£5m
+- Increase lower Capital Gains Tax rate by 5 percentage points: -£40m
+- Increase lower Capital Gains Tax rate by 10 percentage points: -£130m
+- Increase higher Capital Gains Tax rate by 1 percentage point: -£15m
+- Increase higher Capital Gains Tax rate by 5 percentage points: -£170m
+- Increase higher Capital Gains Tax rate by 10 percentage points: -£540m
+- Increase Annual Exempt Amount by £500 for individuals and £250 for trusts: £0m
+
+### Inheritance Tax
+- Increase standard rate for estates left on death by 1 percentage point: £105m
+- Increase Nil Rate Band by £5,000 (cost): £60m
+- Increase Residence Nil Rate Band by £5,000 (cost): £25m
+
+### 1% Change in Various Duties
+- Beer and cider and other fermented product duties: £40m
+- Spirits duties: £40m
+- Tobacco Duties: £5m
+- Petrol: £100m
+- Diesel: £140m
+- Rebated oil: Neg (≈£0m)
+- Climate change levy: £15m
+- Carbon price support: £5m
+- Aggregates levy: £5m
+- Landfill tax: Neg (≈£0m)
+
+### Vehicle Excise Duty
+- Increase rates by £1 for motorbikes and £5 for all other vehicles: £205m
+
+### Air Passenger Duty
+- Increase reduced rate by £1: £115m
+
+### VAT
+- Change reduced rate by 1 percentage point: £490m
+- Change standard rate by 1 percentage point: £8,800m
+
+### Insurance Premium Tax
+- Change standard rate by 1 percentage point: £630m
+- Change higher rate by 1 percentage point: £20m
+
+### Stamp Duty Land Tax - Residential
+- Cut residential 2% marginal rate by 1 percentage point (Cost): £450m
+- Raise residential 2% marginal rate by 1 percentage point (Yield): £420m
+- Cut residential 5% marginal rate by 1 percentage point (Cost): £775m
+- Raise residential 5% marginal rate by 1 percentage point (Yield): £785m
+- Cut residential 10% marginal rate by 1 percentage point (Cost): £40m
+- Raise residential 10% marginal rate by 1 percentage point (Yield): £35m
+- Cut residential 12% marginal rate by 1 percentage point (Cost): -£10m
+- Raise residential 12% marginal rate by 1 percentage point (Yield): -£25m
+- Decrease Higher Rates of Duty on Additional Dwellings by 1 percentage point (Cost): £90m
+- Increase Higher Rates of Duty on Additional Dwellings by 1 percentage point (Yield): -£45m
+- Decrease NRSDLT by 1 percentage point (Cost): £10m
+- Increase NRSDLT by 1 percentage point (Yield): -£10m
+
+### Stamp Duty Land Tax - Non-Residential
+- Decrease non-residential 5% marginal rate by 1 percentage point (Cost): £305m
+- Increase non-residential 5% marginal rate by 1 percentage point (Yield): £150m
+
+Your task:
+1. Parse each tax proposal and identify the specific change
+2. Calculate the revenue impact of each proposal using the guidelines above
+3. For multi-unit changes (e.g., "increase by 2p"), multiply the base amount by the number of units
+4. Sum up the total revenue raised
+5. Return your analysis in the following JSON format:
+
+{{
+  "proposals": [
+    {{
+      "tax": "Tax name",
+      "change": "Description of change",
+      "revenue_impact_m": 1234
+    }},
+    ...
+  ],
+  "total_revenue_m": 12345,
+  "target_revenue_m": 56050,
+  "difference_m": -43705,
+  "reasoning": "Brief explanation of your calculations"
+}}
+
+Important:
+- Revenue impacts should be in millions (£m)
+- Positive numbers = revenue raised, negative numbers = revenue lost
+- Be precise in your calculations based on the guidelines above
+- If a proposal is unclear or doesn't match the guidelines, note it in your reasoning
+- Watch for "cost" vs "yield" - costs are negative revenue, yields are positive
+
+Provide ONLY the JSON output, no other text."""
+
+        try:
+            response = await self.grader_client.responses.create(
+                model="o3-mini",  # Use reasoning model for complex calculation task
+                input=[{"role": "user", "content": grader_prompt}],
+            )
+
+            grading_text = response.output_text or ""
+
+            # Parse JSON response
+            import json
+            # Extract JSON from response (handle potential markdown formatting)
+            json_text = grading_text
+            if "```json" in grading_text:
+                json_text = grading_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in grading_text:
+                json_text = grading_text.split("```")[1].split("```")[0].strip()
+
+            result = json.loads(json_text)
+
+            calculated_revenue = float(result.get("total_revenue_m", 0))
+            target = float(target_revenue)
+
+            # Calculate error and reward using squared difference
+            error = abs(calculated_revenue - target)
+            squared_error = error ** 2
+
+            # Normalization factor: allow 50% error before reward approaches 0
+            normalization = (target * 0.5) ** 2
+
+            # Reward based on squared difference
+            reward = max(0.0, 1.0 - (squared_error / normalization))
+
+            # Format display
+            display_lines = [
+                "Tax Proposals Evaluation",
+                "=" * 60,
+                "",
+                f"Target Revenue: £{target:,.0f}m (£{target/1000:.2f}bn)",
+                f"Calculated Revenue: £{calculated_revenue:,.0f}m (£{calculated_revenue/1000:.2f}bn)",
+                f"Difference: £{calculated_revenue - target:,.0f}m",
+                f"Absolute Error: £{error:,.0f}m ({error/target*100:.1f}%)",
+                "",
+                "Proposals Analyzed:",
+            ]
+
+            for i, prop in enumerate(result.get("proposals", []), 1):
+                display_lines.append(f"  {i}. {prop.get('tax', 'Unknown')}: {prop.get('change', 'N/A')}")
+                display_lines.append(f"     Revenue impact: £{prop.get('revenue_impact_m', 0):,.0f}m")
+
+            display_lines.extend([
+                "",
+                "Reasoning:",
+                result.get("reasoning", "No reasoning provided"),
+                "",
+                "=" * 60,
+                f"Reward: {reward:.3f}",
+            ])
+
+            return {
+                "display_text": "\n".join(display_lines),
+                "metadata": {
+                    "task_id": self.task_data["task_id"],
+                    "target_revenue_m": target,
+                    "calculated_revenue_m": calculated_revenue,
+                    "error_m": error,
+                    "percentage_error": error / target * 100,
+                    "proposals": result.get("proposals", []),
+                    "reasoning": result.get("reasoning", ""),
+                },
+                "reward": reward,
+            }
+
+        except Exception as e:
+            return {
+                "display_text": f"Failed to evaluate tax proposals: {str(e)}\n"
+                               f"The reasoning model may have encountered an error parsing your proposals.",
+                "metadata": {
+                    "task_id": self.task_data["task_id"],
+                    "error": "evaluation_error",
+                    "details": str(e),
+                },
+                "reward": 0.0,
+            }
+
     async def _evaluate_criterion(
         self, report: str, criterion: str, criterion_id: str
     ) -> dict[str, Any]:
@@ -1388,7 +1966,9 @@ Then provide brief reasoning (1-2 sentences)."""
 
         elif task_type == "chart":
             # Check which chart task
-            if self.task_data["task_id"] == "budget_2025_policy_decisions":
+            if self.task_data["task_id"] == "budget_2020_psnb_forecast":
+                grading_results = await self._grade_psnb_2020_task()
+            elif self.task_data["task_id"] == "budget_2025_policy_decisions":
                 grading_results = await self._grade_policy_decisions_task()
             elif self.task_data["task_id"] == "budget_deficit_comparison":
                 grading_results = await self._grade_current_budget_deficit_task()
@@ -1397,6 +1977,9 @@ Then provide brief reasoning (1-2 sentences)."""
 
         elif task_type == "presentation":
             grading_results = await self._grade_presentation_task()
+
+        elif task_type == "tax_proposal":
+            grading_results = await self._grade_tax_proposals_task()
 
         else:  # task_type == "report"
             # Standard rubric-based report grading
