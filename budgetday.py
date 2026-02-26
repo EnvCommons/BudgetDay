@@ -94,6 +94,102 @@ TASKS = [
         "expected_answer": "-£16bn",
     },
     {
+        "task_id": "budget_2025_income_change_2028_29",
+        "task_type": "numerical_qa",
+        "year": 2025,
+        "budget_name": "Budget 2025",
+        "data_dir": "2025",
+        "output_path": "/home/ubuntu/income_change.txt",
+        "description": "Calculate annual income change in 2028-29 for specific household scenario",
+        "question": "As a result of the 2025 Budget, what is the annual income change in 2028-29, adjusted for inflation, for a single parent with three children, working full-time at National Living Wage, living in Wales, and driving a petrol car?",
+        "expected_answer": 4960,
+        "margin_percent": 2.0,
+    },
+    {
+        "task_id": "budget_2025_income_change_single_parent_four_children",
+        "task_type": "numerical_qa",
+        "year": 2025,
+        "budget_name": "Budget 2025",
+        "data_dir": "2025",
+        "output_path": "/home/ubuntu/income_change_sp4c.txt",
+        "description": "Calculate annual income change in 2028-29 for single parent with four children",
+        "question": "As a result of the 2025 Budget, what is the annual income change for 2028-29 (adjusted for inflation) for a single parent with four children, not working but is subject to the two child benefit cap, does not drive and lives in London?",
+        "expected_answer": 135,
+        "margin_percent": 2.0,
+    },
+    {
+        "task_id": "budget_2025_income_change_single_top_earner",
+        "task_type": "numerical_qa",
+        "year": 2025,
+        "budget_name": "Budget 2025",
+        "data_dir": "2025",
+        "output_path": "/home/ubuntu/income_change_top_earner.txt",
+        "description": "Calculate annual income change in 2028-29 for single top earner",
+        "question": "As a result of the 2025 Budget, what is the annual income change for 2028-29 (adjusted for inflation) for a single adult who works a full-time, top earning job, lives in London and drives an electric vehicle?",
+        "expected_answer": -295,
+        "margin_percent": 2.0,
+    },
+    {
+        "task_id": "budget_2025_income_change_pensioner_couple",
+        "task_type": "numerical_qa",
+        "year": 2025,
+        "budget_name": "Budget 2025",
+        "data_dir": "2025",
+        "output_path": "/home/ubuntu/income_change_pensioners.txt",
+        "description": "Calculate annual income change in 2028-29 for pensioner couple",
+        "question": "As a result of the 2025 Budget, what is the annual income change for 2028-29 (adjusted for inflation) for a pensioner couple who live in Yorkshire, both receive an average private pension and drive a petrol car?",
+        "expected_answer": 65,
+        "margin_percent": 2.0,
+    },
+    {
+        "task_id": "budget_2025_income_change_couple_two_children",
+        "task_type": "numerical_qa",
+        "year": 2025,
+        "budget_name": "Budget 2025",
+        "data_dir": "2025",
+        "output_path": "/home/ubuntu/income_change_couple_2c.txt",
+        "description": "Calculate annual income change in 2028-29 for couple with two children",
+        "question": "As a result of the 2025 Budget, what is the annual income change for 2028-29 (adjusted for inflation) for a couple with two children who work low-to-average wage jobs in the South East and commute to work on the trains?",
+        "expected_answer": 235,
+        "margin_percent": 2.0,
+    },
+    {
+        "task_id": "budget_2025_income_change_couple_no_children",
+        "task_type": "numerical_qa",
+        "year": 2025,
+        "budget_name": "Budget 2025",
+        "data_dir": "2025",
+        "output_path": "/home/ubuntu/income_change_couple_0c.txt",
+        "description": "Calculate annual income change in 2028-29 for couple without children",
+        "question": "As a result of the 2025 Budget, what is the annual income change for 2028-29 (adjusted for inflation) for a couple without children, where both work full time in average-to-high wage jobs in the South West and drive a petrol car?",
+        "expected_answer": -70,
+        "margin_percent": 2.0,
+    },
+    {
+        "task_id": "budget_2025_income_change_poorest_10pct",
+        "task_type": "numerical_qa",
+        "year": 2025,
+        "budget_name": "Budget 2025",
+        "data_dir": "2025",
+        "output_path": "/home/ubuntu/income_change_poorest_10pct.txt",
+        "description": "Calculate forecasted annual income change for poorest 10% in 2030-31",
+        "question": "As a result of the 2025 Budget, what is the forecasted annual change in income for the poorest 10% as a result of selected measures in 2030-31, adjusted for inflation?",
+        "expected_answer": 225,
+        "margin_percent": 2.0,
+    },
+    {
+        "task_id": "budget_2025_income_change_richest_10pct",
+        "task_type": "numerical_qa",
+        "year": 2025,
+        "budget_name": "Budget 2025",
+        "data_dir": "2025",
+        "output_path": "/home/ubuntu/income_change_richest_10pct.txt",
+        "description": "Calculate forecasted annual income change for richest 10% in 2030-31",
+        "question": "As a result of the 2025 Budget, what is the forecasted annual change in income for the richest 10% as a result of selected measures in 2030-31, adjusted for inflation?",
+        "expected_answer": -709,
+        "margin_percent": 2.0,
+    },
+    {
         "task_id": "budget_2025_policy_decisions",
         "task_type": "chart",
         "year": 2025,
@@ -139,6 +235,15 @@ TASKS = [
         "data_dir": "2025",
         "output_path": "/home/ubuntu/tax_proposals.md",
         "description": "Propose tax changes to reduce borrowing for 2026-27 by half using provided tax raising guidelines",
+    },
+    {
+        "task_id": "budget_2025_opposition_response",
+        "task_type": "report",
+        "year": 2025,
+        "budget_name": "Budget 2025",
+        "data_dir": "2025",
+        "output_path": "/home/ubuntu/opposition_response.md",
+        "description": "Write Leader of the Opposition's response to Budget 2025",
     },
 ]
 
@@ -241,6 +346,8 @@ class BudgetDay(CLIEnvironment):
         # Route based on task type
         if task_type == "qa":
             return [TextBlock(text=self._get_qa_prompt())]
+        elif task_type == "numerical_qa":
+            return [TextBlock(text=self._get_numerical_qa_prompt())]
         elif task_type == "chart":
             # Check which chart task
             if self.task_data["task_id"] == "budget_2020_psnb_forecast":
@@ -257,6 +364,8 @@ class BudgetDay(CLIEnvironment):
             return [TextBlock(text=self._get_tax_proposals_prompt())]
         elif task_type == "report" and self.task_data["task_id"] == "ai_measures_summary_2020_2025":
             return [TextBlock(text=self._get_ai_measures_prompt())]
+        elif task_type == "report" and self.task_data["task_id"] == "budget_2025_opposition_response":
+            return [TextBlock(text=self._get_opposition_response_prompt())]
 
         # Base prompt common to all report-writing tasks
         base_prompt = f"""# Task: Draft Initial Response to {self.task_data['budget_name']}
@@ -392,6 +501,39 @@ Write your answer with a brief explanation (1-3 sentences) to: **{output_path}**
 Then call `submit_answer` to submit for evaluation.
 """
 
+    def _get_numerical_qa_prompt(self) -> str:
+        """Return the prompt for numerical Q&A tasks."""
+        question = self.task_data["question"]
+        output_path = self.task_data["output_path"]
+
+        return f"""# Task: Budget 2025 Numerical Analysis Question
+
+You are a policy analyst. Your task is to answer the following question by analyzing Budget 2025 documents.
+
+## Available Data
+
+Budget documents are available at `/orwd_data/` (mounted read-only).
+
+## Question
+
+{question}
+
+## Important Instructions
+
+1. Find the relevant data in the Budget 2025 documents
+2. Calculate the annual income change for this specific scenario
+3. Ensure the figure is adjusted for inflation
+4. Write ONLY the number (as an integer) to: **{output_path}**
+   - Do NOT include currency symbols (£)
+   - Do NOT include commas or thousand separators
+   - Do NOT include any explanatory text
+   - Example: If the answer is £4,960, write: 4960
+
+## Your Task
+
+Write your numerical answer to the file path specified above, then call `submit_answer` to submit for evaluation.
+"""
+
     def _get_policy_decisions_prompt(self) -> str:
         """Return the prompt for the policy decisions chart task."""
         return """# Task: Create Policy Decisions Impact Chart and Spreadsheet
@@ -515,6 +657,25 @@ Write your proposals to `/home/ubuntu/tax_proposals.md`
 ## Submission
 
 When ready, call `submit_answer` to submit your proposals for evaluation."""
+
+    def _get_opposition_response_prompt(self) -> str:
+        """Return the prompt for the Leader of the Opposition response task."""
+        return f"""# Task: Leader of the Opposition Response to Budget 2025
+
+You are the Leader of the Opposition in the UK Parliament. Your task is to write a formal response to the 2025 Budget, delivered from the dispatch box in the House of Commons.
+
+## Available Data
+
+Budget documents are available at `/orwd_data/` (mounted read-only). You have access to:
+- Budget 2025 full document
+- Previous budget/statement documents for comparison
+- OBR economic forecasts
+
+## Submission
+
+Write your opposition response to: **{self.task_data['output_path']}**
+
+Then call `submit_answer` tool to submit for evaluation."""
 
     async def _grade_spreadsheet(self, xlsx_bytes: bytes) -> dict[str, Any]:
         """Grade the borrowing spreadsheet using gpt-5-mini by extracting data to text."""
@@ -1842,6 +2003,114 @@ Does the report meet this criterion? Provide brief reasoning (1-2 sentences), th
             "reward": reward,
         }
 
+    async def _grade_numerical_task(self) -> dict[str, Any]:
+        """
+        Grade a numerical Q&A task with percentage tolerance.
+        Extracts number from file and checks if within margin of expected value.
+        """
+        expected = float(self.task_data["expected_answer"])
+        margin_percent = float(self.task_data.get("margin_percent", 2.0))
+        question = self.task_data["question"]
+
+        # Calculate tolerance bounds (use abs for negative expected values)
+        tolerance = abs(expected) * (margin_percent / 100.0)
+        lower_bound = expected - tolerance
+        upper_bound = expected + tolerance
+
+        # Download answer file from sandbox
+        try:
+            answer_content = await self.sandbox.download(self.task_data["output_path"])
+            answer_text = answer_content.decode("utf-8").strip()
+        except Exception as e:
+            return {
+                "display_text": f"Failed to read answer file at {self.task_data['output_path']}\n\n"
+                              f"Error: {str(e)}\n\n"
+                              f"Please ensure you've written your answer to this exact path.",
+                "metadata": {
+                    "task_id": self.task_data["task_id"],
+                    "error": "file_not_found",
+                    "details": str(e),
+                },
+                "reward": 0.0,
+            }
+
+        # Parse number from text
+        try:
+            # Remove common formatting characters
+            cleaned = answer_text.replace(",", "").replace("£", "").replace("$", "").strip()
+
+            # Try to extract first number from text
+            import re
+            number_pattern = r'-?\d+\.?\d*'
+            match = re.search(number_pattern, cleaned)
+
+            if not match:
+                raise ValueError("No number found in file")
+
+            submitted = float(match.group())
+
+        except (ValueError, AttributeError) as e:
+            return {
+                "display_text": f"Failed to parse number from answer file\n\n"
+                              f"File contents: {answer_text[:200]}\n\n"
+                              f"Error: {str(e)}\n\n"
+                              f"Please write only a number (e.g., '4960') without formatting.",
+                "metadata": {
+                    "task_id": self.task_data["task_id"],
+                    "error": "parse_error",
+                    "submitted_text": answer_text,
+                    "details": str(e),
+                },
+                "reward": 0.0,
+            }
+
+        # Calculate error
+        absolute_error = abs(submitted - expected)
+        percentage_error = (absolute_error / expected) * 100.0
+
+        # Check if within tolerance
+        passed = (submitted >= lower_bound) and (submitted <= upper_bound)
+        reward = 1.0 if passed else 0.0
+
+        # Format display text
+        display_lines = [
+            "Numerical Q&A Task Evaluation",
+            "=" * 60,
+            "",
+            f"Question: {question}",
+            "",
+            f"Expected Answer: {expected:,.0f}",
+            f"Submitted Answer: {submitted:,.0f}",
+            "",
+            f"Tolerance: ±{margin_percent}% (±{tolerance:,.1f})",
+            f"Acceptable Range: {lower_bound:,.1f} to {upper_bound:,.1f}",
+            "",
+            f"Absolute Error: {absolute_error:,.1f}",
+            f"Percentage Error: {percentage_error:.2f}%",
+            "",
+            f"Result: {'PASS' if passed else 'FAIL'}",
+            f"Reward: {reward:.2f}",
+            "",
+            "=" * 60,
+        ]
+
+        return {
+            "display_text": "\n".join(display_lines),
+            "metadata": {
+                "task_id": self.task_data["task_id"],
+                "question": question,
+                "expected_answer": expected,
+                "submitted_answer": submitted,
+                "absolute_error": absolute_error,
+                "percentage_error": percentage_error,
+                "margin_percent": margin_percent,
+                "tolerance": tolerance,
+                "passed": passed,
+                "reward": reward,
+            },
+            "reward": reward,
+        }
+
     async def _grade_qa_task(self, submitted_text: str) -> dict[str, Any]:
         """
         Grade a Q&A task answer using gpt-5-mini.
@@ -1964,6 +2233,10 @@ Then provide brief reasoning (1-2 sentences)."""
                     finished=False,
                 )
             grading_results = await self._grade_qa_task(answer_text)
+
+        elif task_type == "numerical_qa":
+            # Numerical Q&A task - download and validate number
+            grading_results = await self._grade_numerical_task()
 
         elif task_type == "chart":
             # Check which chart task
