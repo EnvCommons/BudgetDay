@@ -130,7 +130,7 @@ class CLIEnvironment(Environment):
         """Search for a pattern in files"""
         try:
             # Use grep via bash
-            grep_cmd = f"grep -r '{params.pattern}' {params.path}"
+            grep_cmd = f"grep -r '{params.pattern}' '{params.path}'"
             output, exit_code = await self.sandbox.run(grep_cmd)
 
             # Sanitize output to prevent JSON serialization errors
