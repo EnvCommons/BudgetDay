@@ -1646,7 +1646,8 @@ Provide ONLY the JSON output, no other text."""
 
         try:
             response = await self.grader_client.responses.create(
-                model="o3-mini",  # Use reasoning model for complex calculation task
+                model="gpt-5-mini",
+                reasoning={"effort": "medium"},
                 input=[{"role": "user", "content": grader_prompt}],
             )
 
