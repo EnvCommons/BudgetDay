@@ -320,7 +320,7 @@ class BudgetDay(CLIEnvironment):
         self.sandbox_settings = SandboxSettings(
             environment="GeneralReasoning/BudgetDay",
             image="generalreasoning/knowledge-worker:latest",
-            machine_size="0.5:0.5",
+            machine_size="1:2",
             block_network=False,
             bucket_config=SandboxBucketConfig(
                 mount_path="/orwd_data",
