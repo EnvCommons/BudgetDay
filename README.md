@@ -44,7 +44,7 @@ BudgetDay uses a mixed reward structure that varies by task type:
 - **Numerical QA tasks**: Binary reward. The agent's numerical answer must fall within +/-2% of the expected value. Reward is 1.0 (within tolerance) or 0.0 (outside tolerance).
 - **QA tasks**: Binary reward. An LLM grader (gpt-5-mini) checks semantic equivalence to the expected answer.
 - **Presentation tasks**: Continuous reward (0.0-1.0). PowerPoint text is extracted and graded against a 30-criterion rubric.
-- **Tax proposal tasks**: Continuous reward (0.0-1.0). An LLM grader (gpt-5-mini) parses proposals, calculates total revenue using provided guidelines, and scores based on squared error from the target (£56,050m).
+- **Tax proposal tasks**: Continuous reward (0.0-1.0). An LLM grader (gpt-5-mini) parses proposals, calculates total revenue using provided guidelines, and scores based on squared error from the target.
 - **Opposition response tasks**: Continuous reward (0.0-1.0). Graded against a 35-criterion rubric covering content and stylistic requirements.
 
 ## Data
