@@ -26,6 +26,7 @@ Agents in BudgetDay are given a sandbox with 1 CPU and 2 GB RAM. The sandbox use
 
 ## Tasks
 
+
 There is one split: train (21 tasks). Tasks span six types across UK budgets from 2020 to 2025:
 
 - **Report** (6 tasks): Draft IFS-style initial responses to budgets (2022, 2023, 2024, 2025), compile a cross-year AI measures summary (2020-2025), and write a Leader of the Opposition parliamentary response to Budget 2025.
