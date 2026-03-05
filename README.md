@@ -20,10 +20,6 @@
 
 Agents in BudgetDay are given a sandbox with 1 CPU and 2 GB RAM. The sandbox uses the `generalreasoning/knowledge-worker:latest` image, which includes tools for working with Word, Excel, PowerPoint, and PDF documents. Network access is enabled.
 
-## License
-
-[ORLv1](https://openreward.ai/orlv1.md).
-
 ## Tasks
 
 There is one split: train (21 tasks). Tasks span six types across UK budgets from 2020 to 2025:
