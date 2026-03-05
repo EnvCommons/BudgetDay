@@ -4,7 +4,7 @@
 
 ## Description
 
-**BudgetDay** is an environment for evaluating agents on UK fiscal policy analysis tasks. Agents are given a sandboxed environment with access to real UK Budget and Autumn Statement documents (2020-2025) and must produce policy reports, data visualizations, numerical analyses, presentations, and creative policy proposals. Tasks span drafting IFS-style initial responses, extracting and charting OBR borrowing forecasts, calculating household income impacts, creating PowerPoint presentations on tax measures, and writing parliamentary-style opposition responses. Grading uses a combination of LLM rubric evaluation (gpt-5-mini), numerical tolerance checks, and vision-based chart validation.
+**BudgetDay** is an ORS environment for evaluating agents on UK fiscal policy analysis tasks. Agents are given a sandboxed environment with access to real UK Budget and Autumn Statement documents (2020-2025) and must produce policy reports, data visualizations, numerical analyses, presentations, and creative policy proposals. Tasks span drafting IFS-style initial responses, extracting and charting OBR borrowing forecasts, calculating household income impacts, creating PowerPoint presentations on tax measures, and writing parliamentary-style opposition responses. Grading uses a combination of LLM rubric evaluation (gpt-5-mini), numerical tolerance checks, and vision-based chart validation.
 
 ## Capabilities
 
