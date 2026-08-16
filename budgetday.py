@@ -8,10 +8,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-import openai
 import openpyxl
 import pptx
 from openreward import AsyncOpenReward, SandboxBucketConfig, SandboxSettings
+from openreward.chat_backends import resolve_backend
 from openreward.environments import JSONObject, TextBlock, ToolOutput, tool, Split
 from openreward.toolsets import WordToolset, ExcelToolset, PowerPointToolset, PDFToolset
 from pydantic import BaseModel
@@ -311,11 +311,16 @@ class BudgetDay(CLIEnvironment):
         if not self.task_data:
             raise ValueError(f"Unknown task_id: {self.task_id}")
 
-        # Initialize OpenAI client for grading
-        api_key = secrets.get("openai_api_key")
-        if not api_key:
-            raise ValueError("OpenAI API key required in secrets for rubric grading")
-        self.grader_client = openai.AsyncClient(api_key=api_key)
+        # Grader traffic goes through the SDK's chat-backend layer, which pins
+        # base_url + key explicitly so OPENAI_* env rewrites (training gateway)
+        # can't silently redirect the judge.
+        try:
+            self.grader_client = resolve_backend(secrets=secrets)
+        except ValueError as e:
+            raise ValueError(
+                "OpenAI API key required in secrets for rubric grading. Provide via "
+                "secrets={'openai_api_key': 'sk-...'} or 'chat_api_key'"
+            ) from e
 
         self.sandbox_settings = SandboxSettings(
             environment="GeneralReasoning/BudgetDay",
@@ -725,9 +730,9 @@ DIFFERENCE_VALUES: PASS/FAIL
 
 Then provide a brief explanation."""
 
-        response = await self.grader_client.responses.create(
+        response = await self.grader_client.create(
             model="gpt-5-mini",
-            input=[
+            messages=[
                 {
                     "role": "user",
                     "content": grader_prompt,
@@ -736,7 +741,7 @@ Then provide a brief explanation."""
             # NO temperature parameter (per CLAUDE.md)
         )
 
-        grading_text = response.output_text or ""
+        grading_text = response.text or ""
 
         checks = {}
         for criterion in ["YEARS_PRESENT", "MARCH_VALUES", "OCTOBER_VALUES", "DIFFERENCE_VALUES"]:
@@ -785,18 +790,18 @@ APPROXIMATE_VALUES: PASS/FAIL
 
 Then provide a brief explanation."""
 
-        response = await self.grader_client.responses.create(
+        response = await self.grader_client.create(
             model="gpt-5-mini",
-            input=[
+            messages=[
                 {
                     "role": "user",
                     "content": [
                         {
-                            "type": "input_image",
-                            "image_url": f"data:image/png;base64,{image_b64}",
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{image_b64}"},
                         },
                         {
-                            "type": "input_text",
+                            "type": "text",
                             "text": grader_prompt,
                         },
                     ],
@@ -805,7 +810,7 @@ Then provide a brief explanation."""
             # NO temperature parameter (per CLAUDE.md)
         )
 
-        grading_text = response.output_text or ""
+        grading_text = response.text or ""
 
         checks = {}
         for criterion in ["IS_BAR_CHART", "GREEN_BARS", "CORRECT_YEARS",
@@ -866,12 +871,12 @@ DIFFERENCE_VALUES: PASS/FAIL
 
 Then provide a brief explanation."""
 
-        response = await self.grader_client.responses.create(
+        response = await self.grader_client.create(
             model="gpt-5-mini",
-            input=[{"role": "user", "content": grader_prompt}],
+            messages=[{"role": "user", "content": grader_prompt}],
         )
 
-        grading_text = response.output_text or ""
+        grading_text = response.text or ""
 
         checks = {}
         for criterion in ["YEARS_PRESENT", "MARCH_2019_VALUES", "BUDGET_2020_VALUES", "DIFFERENCE_VALUES"]:
@@ -916,20 +921,20 @@ APPROXIMATE_VALUES: PASS/FAIL
 
 Then provide a brief explanation."""
 
-        response = await self.grader_client.responses.create(
+        response = await self.grader_client.create(
             model="gpt-5-mini",
-            input=[
+            messages=[
                 {
                     "role": "user",
                     "content": [
-                        {"type": "input_image", "image_url": f"data:image/png;base64,{image_b64}"},
-                        {"type": "input_text", "text": grader_prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
+                        {"type": "text", "text": grader_prompt},
                     ],
                 }
             ],
         )
 
-        grading_text = response.output_text or ""
+        grading_text = response.text or ""
 
         checks = {}
         for criterion in ["IS_BAR_CHART", "CORRECT_YEARS", "NEGATIVE_2019_20", "POSITIVE_REMAINING", "APPROXIMATE_VALUES"]:
@@ -1075,13 +1080,13 @@ TAX_VALUES: PASS/FAIL
 
 Then provide a brief explanation."""
 
-        response = await self.grader_client.responses.create(
+        response = await self.grader_client.create(
             model="gpt-5-mini",
-            input=[{"role": "user", "content": grader_prompt}],
+            messages=[{"role": "user", "content": grader_prompt}],
             # NO temperature parameter (per CLAUDE.md)
         )
 
-        grading_text = response.output_text or ""
+        grading_text = response.text or ""
 
         checks = {}
         for criterion in ["YEARS_PRESENT", "SPENDING_VALUES", "TAX_VALUES"]:
@@ -1138,18 +1143,18 @@ APPROXIMATE_VALUES: PASS/FAIL
 
 Then provide a brief explanation."""
 
-        response = await self.grader_client.responses.create(
+        response = await self.grader_client.create(
             model="gpt-5-mini",
-            input=[
+            messages=[
                 {
                     "role": "user",
                     "content": [
                         {
-                            "type": "input_image",
-                            "image_url": f"data:image/png;base64,{image_b64}",
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{image_b64}"},
                         },
                         {
-                            "type": "input_text",
+                            "type": "text",
                             "text": grader_prompt,
                         },
                     ],
@@ -1158,7 +1163,7 @@ Then provide a brief explanation."""
             # NO temperature parameter (per CLAUDE.md)
         )
 
-        grading_text = response.output_text or ""
+        grading_text = response.text or ""
 
         checks = {}
         for criterion in ["IS_BAR_CHART", "CORRECT_COLORS", "CORRECT_YEARS",
@@ -1306,13 +1311,13 @@ BUDGET_2025_VALUES: PASS/FAIL
 
 Then provide a brief explanation."""
 
-        response = await self.grader_client.responses.create(
+        response = await self.grader_client.create(
             model="gpt-5-mini",
-            input=[{"role": "user", "content": grader_prompt}],
+            messages=[{"role": "user", "content": grader_prompt}],
             # NO temperature parameter (per CLAUDE.md)
         )
 
-        grading_text = response.output_text or ""
+        grading_text = response.text or ""
 
         checks = {}
         for criterion in ["YEARS_PRESENT", "BUDGET_2024_VALUES", "BUDGET_2025_VALUES"]:
@@ -1367,18 +1372,18 @@ AXES_LABELED: PASS/FAIL
 
 Then provide a brief explanation."""
 
-        response = await self.grader_client.responses.create(
+        response = await self.grader_client.create(
             model="gpt-5-mini",
-            input=[
+            messages=[
                 {
                     "role": "user",
                     "content": [
                         {
-                            "type": "input_image",
-                            "image_url": f"data:image/png;base64,{image_b64}",
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{image_b64}"},
                         },
                         {
-                            "type": "input_text",
+                            "type": "text",
                             "text": grader_prompt,
                         },
                     ],
@@ -1387,7 +1392,7 @@ Then provide a brief explanation."""
             # NO temperature parameter (per CLAUDE.md)
         )
 
-        grading_text = response.output_text or ""
+        grading_text = response.text or ""
 
         checks = {}
         for criterion in ["IS_LINE_GRAPH", "CORRECT_COLORS", "CORRECT_YEARS",
@@ -1806,13 +1811,13 @@ Important:
 Provide ONLY the JSON output, no other text."""
 
         try:
-            response = await self.grader_client.responses.create(
+            response = await self.grader_client.create(
                 model="gpt-5-mini",
-                reasoning={"effort": "medium"},
-                input=[{"role": "user", "content": grader_prompt}],
+                reasoning_effort="medium",
+                messages=[{"role": "user", "content": grader_prompt}],
             )
 
-            grading_text = response.output_text or ""
+            grading_text = response.text or ""
 
             # Parse JSON response
             import json
@@ -1907,13 +1912,13 @@ Criterion to check:
 
 Does the report meet this criterion? Provide brief reasoning (1-2 sentences), then answer either "PASS" or "FAIL"."""
 
-        response = await self.grader_client.responses.create(
+        response = await self.grader_client.create(
             model="gpt-5-mini",  # MUST use gpt-5-mini for graders
-            input=[{"role": "user", "content": grader_prompt}],
+            messages=[{"role": "user", "content": grader_prompt}],
             # NO temperature parameter (per CLAUDE.md)
         )
 
-        grading_text = response.output_text or ""
+        grading_text = response.text or ""
 
         # Parse result
         upper_text = grading_text.upper()
@@ -2146,13 +2151,13 @@ Answer with ONE of:
 
 Then provide brief reasoning (1-2 sentences)."""
 
-        response = await self.grader_client.responses.create(
+        response = await self.grader_client.create(
             model="gpt-5-mini",  # MUST use gpt-5-mini for graders
-            input=[{"role": "user", "content": grader_prompt}],
+            messages=[{"role": "user", "content": grader_prompt}],
             # NO temperature parameter (per CLAUDE.md)
         )
 
-        grading_text = response.output_text or ""
+        grading_text = response.text or ""
 
         # Parse result - look for PASS/FAIL
         upper_text = grading_text.upper()
