@@ -275,6 +275,11 @@ PSNB_2020_GROUND_TRUTH = {
 }
 
 
+# Reward for a submission made after the task has already been graded. Negative
+# so repeat submissions are actively discouraged, not merely left unscored.
+REPEAT_SUBMISSION_PENALTY = -0.1
+
+
 class SubmitAnswerInput(BaseModel):
     """Input for submit_answer tool (no parameters needed - reads from fixed path)."""
 
@@ -2210,9 +2215,11 @@ Then provide brief reasoning (1-2 sentences)."""
         """
         if self.submitted:
             return ToolOutput(
-                blocks=[TextBlock(text="You have already submitted an answer for evaluation.")],
-                metadata={"error": "already_submitted"},
-                reward=0.0,
+                blocks=[TextBlock(text="You have already submitted an answer for evaluation. "
+                                       "This episode is over: it is not re-graded, and repeat "
+                                       "submissions are penalised (reward -0.1).")],
+                metadata={"error": "already_submitted", "already_submitted": True},
+                reward=REPEAT_SUBMISSION_PENALTY,
                 finished=True,
             )
 
