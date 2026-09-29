@@ -60,7 +60,7 @@ Agents are given CLI tools and document toolsets:
 - `edit`: Perform string replacement in a file.
 - `multi_edit`: Perform multiple edits on a single file.
 - `todo_write`: Manage a todo list for task planning.
-- `submit_answer`: Submit output for evaluation. This tool can only be called once per task.
+- `submit_answer`: Submit output for evaluation. The first graded submission ends the episode; a submission whose output file is missing or cannot be parsed is not graded and can be resubmitted.
 
 Additionally, four toolsets are included: **WordToolset** (creating and editing Word documents), **ExcelToolset** (creating and editing Excel spreadsheets), **PowerPointToolset** (creating and editing PowerPoint presentations), and **PDFToolset** (reading and extracting content from PDF files). Each toolset provides multiple tools for its respective document type.
 
