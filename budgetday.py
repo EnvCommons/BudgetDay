@@ -1878,19 +1878,12 @@ Provide ONLY the JSON output, no other text."""
             }
 
         except Exception as e:
-            # The exception text can quote the grader's output, so it is logged
-            # here and only its type is reported.
+            # A grader failure is not a verdict on the proposals: raise so the call
+            # fails without a reward and the submission can be retried. The
+            # exception text can quote the grader's output, so it is logged here
+            # and only its type is reported.
             logger.exception("tax proposal evaluation failed for %s", self.task_data["task_id"])
-            return {
-                "display_text": f"Failed to evaluate tax proposals ({type(e).__name__}).\n"
-                               f"The reasoning model may have encountered an error parsing your proposals.",
-                "metadata": {
-                    "task_id": self.task_data["task_id"],
-                    "error": "evaluation_error",
-                    "details": type(e).__name__,
-                },
-                "reward": 0.0,
-            }
+            raise RuntimeError(f"Failed to evaluate tax proposals ({type(e).__name__})") from None
 
     async def _evaluate_criterion(
         self, report: str, criterion: str, criterion_id: str
@@ -2255,6 +2248,23 @@ Then provide brief reasoning (1-2 sentences)."""
                     finished=False,
                 )
             grading_results = await self._grade_with_rubric(report_text)
+
+        # A deliverable that is missing or cannot be parsed was never graded, so it
+        # does not count as the submission and the episode stays open.
+        metadata = grading_results["metadata"]
+        ungraded = metadata.get("error") in ("file_not_found", "parse_error") or (
+            task_type == "chart"
+            and metadata["spreadsheet_result"] is None
+            and metadata["chart_result"] is None
+        )
+        if ungraded:
+            return ToolOutput(
+                blocks=[TextBlock(text=grading_results["display_text"] + "\n\n"
+                                  "Nothing was graded. Fix the output file(s) and call submit_answer again.")],
+                metadata={**metadata, "error": metadata.get("error", "file_not_found")},
+                reward=0.0,
+                finished=False,
+            )
 
         self.submitted = True
 
