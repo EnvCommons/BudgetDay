@@ -4,6 +4,7 @@ import asyncio
 import base64
 import io
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,8 @@ from pydantic import BaseModel
 from cli_environment import CLIEnvironment
 from constants import ENV_PATH
 
+
+logger = logging.getLogger(__name__)
 
 # Load rubrics at module level
 with open(ENV_PATH / "rubrics.json") as f:
@@ -1875,13 +1878,16 @@ Provide ONLY the JSON output, no other text."""
             }
 
         except Exception as e:
+            # The exception text can quote the grader's output, so it is logged
+            # here and only its type is reported.
+            logger.exception("tax proposal evaluation failed for %s", self.task_data["task_id"])
             return {
-                "display_text": f"Failed to evaluate tax proposals: {str(e)}\n"
+                "display_text": f"Failed to evaluate tax proposals ({type(e).__name__}).\n"
                                f"The reasoning model may have encountered an error parsing your proposals.",
                 "metadata": {
                     "task_id": self.task_data["task_id"],
                     "error": "evaluation_error",
-                    "details": str(e),
+                    "details": type(e).__name__,
                 },
                 "reward": 0.0,
             }
