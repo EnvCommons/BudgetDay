@@ -760,7 +760,6 @@ Then provide a brief explanation."""
         return {
             "score": score,
             "checks": checks,
-            "details": grading_text,
         }
 
     async def _grade_chart_image(self, png_bytes: bytes) -> dict[str, Any]:
@@ -830,7 +829,6 @@ Then provide a brief explanation."""
         return {
             "score": score,
             "checks": checks,
-            "details": grading_text,
         }
 
     async def _grade_psnb_2020_spreadsheet(self, xlsx_bytes: bytes) -> dict[str, Any]:
@@ -892,7 +890,7 @@ Then provide a brief explanation."""
         passed_checks = sum(checks.values())
         score = passed_checks / len(checks)
 
-        return {"score": score, "checks": checks, "details": grading_text}
+        return {"score": score, "checks": checks}
 
     async def _grade_psnb_2020_chart(self, png_bytes: bytes) -> dict[str, Any]:
         """Grade the PSNB 2020 chart image using gpt-5-mini vision."""
@@ -950,7 +948,7 @@ Then provide a brief explanation."""
         passed_checks = sum(checks.values())
         score = passed_checks / len(checks)
 
-        return {"score": score, "checks": checks, "details": grading_text}
+        return {"score": score, "checks": checks}
 
     async def _grade_psnb_2020_task(self) -> dict[str, Any]:
         """Grade the PSNB 2020 task by validating both files."""
@@ -1105,7 +1103,6 @@ Then provide a brief explanation."""
         return {
             "score": score,
             "checks": checks,
-            "details": grading_text,
         }
 
     async def _grade_policy_decisions_chart(self, png_bytes: bytes) -> dict[str, Any]:
@@ -1183,7 +1180,6 @@ Then provide a brief explanation."""
         return {
             "score": score,
             "checks": checks,
-            "details": grading_text,
         }
 
     async def _grade_policy_decisions_task(self) -> dict[str, Any]:
@@ -1336,7 +1332,6 @@ Then provide a brief explanation."""
         return {
             "score": score,
             "checks": checks,
-            "details": grading_text,
         }
 
     async def _grade_current_budget_deficit_chart(self, png_bytes: bytes) -> dict[str, Any]:
@@ -1412,7 +1407,6 @@ Then provide a brief explanation."""
         return {
             "score": score,
             "checks": checks,
-            "details": grading_text,
         }
 
     async def _grade_current_budget_deficit_task(self) -> dict[str, Any]:
@@ -1849,14 +1843,13 @@ Provide ONLY the JSON output, no other text."""
             reward = max(0.0, 1.0 - (squared_error / normalization))
 
             # Format display
+            # The target, the error against it and the grader's reasoning are left out:
+            # they reveal the reference figure.
             display_lines = [
                 "Tax Proposals Evaluation",
                 "=" * 60,
                 "",
-                f"Target Revenue: £{target:,.0f}m (£{target/1000:.2f}bn)",
                 f"Calculated Revenue: £{calculated_revenue:,.0f}m (£{calculated_revenue/1000:.2f}bn)",
-                f"Difference: £{calculated_revenue - target:,.0f}m",
-                f"Absolute Error: £{error:,.0f}m ({error/target*100:.1f}%)",
                 "",
                 "Proposals Analyzed:",
             ]
@@ -1867,9 +1860,6 @@ Provide ONLY the JSON output, no other text."""
 
             display_lines.extend([
                 "",
-                "Reasoning:",
-                result.get("reasoning", "No reasoning provided"),
-                "",
                 "=" * 60,
                 f"Reward: {reward:.3f}",
             ])
@@ -1878,12 +1868,8 @@ Provide ONLY the JSON output, no other text."""
                 "display_text": "\n".join(display_lines),
                 "metadata": {
                     "task_id": self.task_data["task_id"],
-                    "target_revenue_m": target,
                     "calculated_revenue_m": calculated_revenue,
-                    "error_m": error,
-                    "percentage_error": error / target * 100,
                     "proposals": result.get("proposals", []),
-                    "reasoning": result.get("reasoning", ""),
                 },
                 "reward": reward,
             }
@@ -1968,28 +1954,21 @@ Does the report meet this criterion? Provide brief reasoning (1-2 sentences), th
         total_points = len(results)
         reward = passed_count / total_points  # 27/30 = 0.9
 
+        # Only counts are reported: the criterion text and the judge's reasoning
+        # state what the reference contains.
+        high_level = [r for r in results if r["type"] == "high_level"]
+        specific = [r for r in results if r["type"] == "specific"]
+        high_level_passed = sum(r["passed"] for r in high_level)
+        specific_passed = sum(r["passed"] for r in specific)
+
         # Format display text
         display_lines = [
             f"Rubric Evaluation: {passed_count}/{total_points} criteria passed",
             f"Reward: {reward:.2f}",
             "",
-            "HIGH-LEVEL CRITERIA (1-15):",
+            f"HIGH-LEVEL CRITERIA: {high_level_passed}/{len(high_level)} passed",
+            f"SPECIFIC FACTUAL CRITERIA: {specific_passed}/{len(specific)} passed",
         ]
-
-        high_level = [r for r in results if r["type"] == "high_level"]
-        for r in high_level:
-            status = "✓" if r["passed"] else "✗"
-            display_lines.append(f"  {status} {r['criterion_id']}: {r['description']}")
-            if not r["passed"]:  # Show reasoning for failures
-                display_lines.append(f"     Reasoning: {r['reasoning'][:200]}")
-
-        display_lines.append("\nSPECIFIC FACTUAL CRITERIA (16-30):")
-        specific = [r for r in results if r["type"] == "specific"]
-        for r in specific:
-            status = "✓" if r["passed"] else "✗"
-            display_lines.append(f"  {status} {r['criterion_id']}: {r['description']}")
-            if not r["passed"]:
-                display_lines.append(f"     Reasoning: {r['reasoning'][:200]}")
 
         display_lines.append(f"\n{'=' * 60}")
         if reward == 1.0:
@@ -2005,9 +1984,12 @@ Does the report meet this criterion? Provide brief reasoning (1-2 sentences), th
             "display_text": "\n".join(display_lines),
             "metadata": {
                 "task_id": self.task_data["task_id"],
-                "criteria_results": results,
                 "passed_count": passed_count,
                 "total_count": total_points,
+                "high_level_passed": high_level_passed,
+                "high_level_count": len(high_level),
+                "specific_passed": specific_passed,
+                "specific_count": len(specific),
                 "reward": reward,
             },
             "reward": reward,
@@ -2074,29 +2056,20 @@ Does the report meet this criterion? Provide brief reasoning (1-2 sentences), th
                 "reward": 0.0,
             }
 
-        # Calculate error
-        absolute_error = abs(submitted - expected)
-        percentage_error = (absolute_error / expected) * 100.0
-
         # Check if within tolerance
         passed = (submitted >= lower_bound) and (submitted <= upper_bound)
         reward = 1.0 if passed else 0.0
 
-        # Format display text
+        # Format display text. The expected answer, the acceptable range and the
+        # error against it are left out: each reveals the reference value.
         display_lines = [
             "Numerical Q&A Task Evaluation",
             "=" * 60,
             "",
             f"Question: {question}",
             "",
-            f"Expected Answer: {expected:,.0f}",
             f"Submitted Answer: {submitted:,.0f}",
-            "",
-            f"Tolerance: ±{margin_percent}% (±{tolerance:,.1f})",
-            f"Acceptable Range: {lower_bound:,.1f} to {upper_bound:,.1f}",
-            "",
-            f"Absolute Error: {absolute_error:,.1f}",
-            f"Percentage Error: {percentage_error:.2f}%",
+            f"Tolerance: ±{margin_percent}%",
             "",
             f"Result: {'PASS' if passed else 'FAIL'}",
             f"Reward: {reward:.2f}",
@@ -2109,12 +2082,8 @@ Does the report meet this criterion? Provide brief reasoning (1-2 sentences), th
             "metadata": {
                 "task_id": self.task_data["task_id"],
                 "question": question,
-                "expected_answer": expected,
                 "submitted_answer": submitted,
-                "absolute_error": absolute_error,
-                "percentage_error": percentage_error,
                 "margin_percent": margin_percent,
-                "tolerance": tolerance,
                 "passed": passed,
                 "reward": reward,
             },
@@ -2175,7 +2144,6 @@ Then provide brief reasoning (1-2 sentences)."""
             "=" * 60,
             "",
             f"Question: {question}",
-            f"Expected Answer: {expected}",
             "",
             "Submitted Answer:",
             "-" * 60,
@@ -2185,9 +2153,6 @@ Then provide brief reasoning (1-2 sentences)."""
             f"Result: {'✅ PASS' if passed else '❌ FAIL'}",
             f"Reward: {reward:.2f}",
             "",
-            "Grader Reasoning:",
-            grading_text,
-            "",
             "=" * 60,
         ]
 
@@ -2196,10 +2161,8 @@ Then provide brief reasoning (1-2 sentences)."""
             "metadata": {
                 "task_id": self.task_data["task_id"],
                 "question": question,
-                "expected_answer": expected,
                 "submitted_answer": submitted_text,
                 "passed": passed,
-                "grader_reasoning": grading_text,
                 "reward": reward,
             },
             "reward": reward,
