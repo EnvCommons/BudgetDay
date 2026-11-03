@@ -4,7 +4,7 @@
 
 ## Description
 
-**BudgetDay** is an ORS environment for evaluating agents on UK fiscal policy analysis tasks. Agents are given a sandboxed environment with access to real UK Budget and Autumn Statement documents (2020-2025) and must produce policy reports, data visualizations, numerical analyses, presentations, and creative policy proposals. Tasks span drafting IFS-style initial responses, extracting and charting OBR borrowing forecasts, calculating household income impacts, creating PowerPoint presentations on tax measures, and writing parliamentary-style opposition responses. Grading uses a combination of LLM rubric evaluation (gpt-5-mini), numerical tolerance checks, and vision-based chart validation.
+**BudgetDay** is an environment for evaluating agents on UK fiscal policy analysis tasks. Agents are given a sandboxed environment with access to real UK Budget and Autumn Statement documents (2020-2025) and must produce policy reports, data visualizations, numerical analyses, presentations, and creative policy proposals. Tasks span drafting IFS-style initial responses, extracting and charting OBR borrowing forecasts, calculating household income impacts, creating PowerPoint presentations on tax measures, and writing parliamentary-style opposition responses. Grading uses a combination of LLM rubric evaluation (gpt-5-mini), numerical tolerance checks, and vision-based chart validation.
 
 ## Capabilities
 
@@ -18,11 +18,15 @@
 
 ## Compute Requirements
 
-Agents in BudgetDay are given a sandbox with 1 CPU and 2 GB RAM. The sandbox uses the `generalreasoning/knowledge-worker:latest` image, which includes tools for working with Word, Excel, PowerPoint, and PDF documents. Network access is enabled.
+Agents in BudgetDay are given a sandbox with 2 CPUs and 4 GB RAM. The sandbox uses the `generalreasoning/knowledge-worker:latest` image, which includes tools for working with Word, Excel, PowerPoint, and PDF documents. Network access is enabled.
+
+## License
+
+[MIT](https://opensource.org/licenses/MIT).
 
 ## Tasks
 
-There is one split: train (21 tasks). Tasks span six types across UK budgets from 2020 to 2025:
+There are 21 tasks in the `train` split. Tasks span six types across UK budgets from 2020 to 2025:
 
 - **Report** (6 tasks): Draft IFS-style initial responses to budgets (2022, 2023, 2024, 2025), compile a cross-year AI measures summary (2020-2025), and write a Leader of the Opposition parliamentary response to Budget 2025.
 - **Chart** (4 tasks): Extract fiscal data and produce Excel spreadsheets and charts (borrowing forecasts, policy decisions, budget deficit comparisons, PSNB forecasts).
@@ -35,13 +39,13 @@ There is one split: train (21 tasks). Tasks span six types across UK budgets fro
 
 BudgetDay uses a mixed reward structure that varies by task type:
 
-- **Report tasks**: Continuous reward (0.0-1.0). Each report is graded against a 30-criterion rubric (15 high-level + 15 specific factual criteria) using an LLM grader (gpt-5-mini). Reward is the proportion of criteria passed.
-- **Chart tasks**: Continuous reward (0.0-1.0). Spreadsheets are graded via LLM text extraction against ground-truth values. Chart images are graded via LLM vision against expected visual properties (chart type, colors, values). Scores are combined (typically 50/50 spreadsheet/chart weighting, or 70/30 when chart is optional).
+- **Report tasks**: Continuous reward (0.0-1.0). Each report is graded against a 30-criterion rubric using an LLM grader (gpt-5-mini), one call per criterion. Reward is the proportion of criteria passed.
+- **Chart tasks**: Continuous reward (0.0-1.0). Spreadsheets are graded via LLM text extraction against ground-truth values. Chart images are graded via LLM vision against expected visual properties (chart type, colors, values). Scores are combined (50/50 spreadsheet/chart weighting, or 70/30 when the chart is optional).
 - **Numerical QA tasks**: Binary reward. The agent's numerical answer must fall within +/-2% of the expected value. Reward is 1.0 (within tolerance) or 0.0 (outside tolerance).
 - **QA tasks**: Binary reward. An LLM grader (gpt-5-mini) checks semantic equivalence to the expected answer.
-- **Presentation tasks**: Continuous reward (0.0-1.0). PowerPoint text is extracted and graded against a 30-criterion rubric.
-- **Tax proposal tasks**: Continuous reward (0.0-1.0). An LLM grader (gpt-5-mini) parses proposals, calculates total revenue using provided guidelines, and scores based on squared error from the target.
-- **Opposition response tasks**: Continuous reward (0.0-1.0). Graded against a 35-criterion rubric covering content and stylistic requirements.
+- **Presentation tasks**: Continuous reward (0.0-1.0). PowerPoint text is extracted and graded against the task's rubric in the same way.
+- **Tax proposal tasks**: Continuous reward (0.0-1.0). An LLM grader (gpt-5-mini) parses proposals and calculates total revenue using the provided guidelines; reward is `max(0, 1 - error^2 / (0.5 * target)^2)`, so it reaches 0 at a 50% miss.
+- **Opposition response task**: Continuous reward (0.0-1.0). Graded like the other reports, against a rubric covering content and stylistic requirements.
 
 ## Data
 
@@ -54,29 +58,19 @@ Agents are given CLI tools and document toolsets:
 - `bash`: Run a bash command in the sandbox.
 - `glob`: Find files matching a glob pattern.
 - `grep`: Search for patterns in files.
-- `ls`: List files and directories.
 - `read`: Read file contents.
 - `write`: Write content to a file.
-- `edit`: Perform string replacement in a file.
-- `multi_edit`: Perform multiple edits on a single file.
-- `todo_write`: Manage a todo list for task planning.
 - `submit_answer`: Submit output for evaluation. The first graded submission ends the episode; a submission whose output file is missing or cannot be parsed is not graded and can be resubmitted.
 
-Additionally, four toolsets are included: **WordToolset** (creating and editing Word documents), **ExcelToolset** (creating and editing Excel spreadsheets), **PowerPointToolset** (creating and editing PowerPoint presentations), and **PDFToolset** (reading and extracting content from PDF files). Each toolset provides multiple tools for its respective document type.
+Additionally, four document toolsets are included: Word (`word_*`, 12 tools for creating, reading and editing documents), Excel (`excel_*`, 11 tools for spreadsheets, tabs and charts), PowerPoint (`powerpoint_*`, 11 tools for slides, tables, charts and images) and PDF (`pdfs_*`, 11 tools for creating, reading, searching and merging PDFs).
 
 ## Time Horizon
 
 BudgetDay is a multi-turn environment. The agent iterates using CLI tools to read budget documents, analyze data, write scripts, create output files (reports, spreadsheets, charts, presentations), and submit for evaluation.
 
-[How many average tool calls?]
-
-## Environment Difficulty
-
-[Statistics on environment difficulty here]
-
 ## Other Environment Requirements
 
-BudgetDay requires an OpenAI API key (`OPENAI_API_KEY` secret) for LLM-based rubric grading and chart validation.
+BudgetDay requires an OpenAI API key, passed as the `openai_api_key` secret, for LLM-based rubric grading and chart validation.
 
 ## Safety
 
